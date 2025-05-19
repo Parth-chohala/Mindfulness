@@ -36,7 +36,15 @@ exports.createTask = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
+exports.getalltasks = async (req, res) => {
+  try {
+    const db = await connectToDB();
+    const tasks = await db.collection('tasks').find().toArray();
+    res.status(200).json(tasks);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 // Get all tasks for a user
 exports.getTasksByUser = async (req, res) => {
   try {
@@ -71,7 +79,11 @@ exports.updateTask = async (req, res) => {
     //('Updating task:', req.params.id, req.body);
     const db = await connectToDB();
     const taskId = new ObjectId(req.params.id);
-
+    const userId = new ObjectId(req.body.userId);
+    // if(!userId) return res.status(400).json({ message: 'userId is required' });
+    if(userId){
+      req.body.userId = userId;
+    }
     const updates = { ...req.body, updatedAt: new Date() };
     
     // If deadline is provided, convert it to a Date object

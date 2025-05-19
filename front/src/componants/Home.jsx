@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Settings, Coffee, Plus, Trash, RefreshCw, X } from 'lucide-react';
-import './css/home.css';
+// import './css/home.css';
 import timerService from '../services/TimerService';
 import { showSuccessToast, showErrorToast, showInfoToast } from '../utils/toastStyles';
 import AuthDialog from './AuthDialog';

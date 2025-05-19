@@ -95,18 +95,18 @@ class TimerService {
   async fetchTimerData() {
     this.updateUserId();
     if (!this.userId) {
-      //("No user ID available, skipping fetchTimerData");
+      console.log("No user ID available, skipping fetchTimerData");
       return null;
     }
 
     const now = Date.now();
     // Throttle fetches to prevent excessive API calls
     if (this.lastFetchTime && now - this.lastFetchTime < 5000) {
-      //("Throttling fetchTimerData - last fetch was too recent");
+      console.log("Throttling fetchTimerData - last fetch was too recent");
       return null;
     }
 
-    //(`Fetching timer data for user ${this.userId}`);
+    console.log(`Fetching timer data for user ${this.userId}`);
 
     try {
       // Use AbortController to set a timeout
@@ -145,8 +145,8 @@ class TimerService {
       const timer = await res.json();
       const breakinfo = await breakdata.json();
 
-      //("Fetched timer data:", timer);
-      //("Fetched break info:", breakinfo);
+      console.log("Fetched timer data:", timer);
+      console.log("Fetched break info:", breakinfo);
 
       // Store the timer ID for future updates
       this.timerId = timer._id;
@@ -190,20 +190,17 @@ class TimerService {
       this.isRunning = timer.isRunning || false;
       this.isOnBreak = timer.isOnBreak || false;
       
-      // Save to localStorage
-      this.saveState();
-
       // If timer was running, restart the interval
       if (this.isRunning) {
-        //("Timer was running in database, restarting timer...");
+        console.log("Timer was running in database, restarting timer...");
         // Stop any existing intervals first
         this.stopAllTimers();
         
         if (this.isOnBreak) {
-          //("Restarting break timer");
+          console.log("Restarting break timer");
           this.startBreakInterval();
         } else {
-          //("Restarting work timer");
+          console.log("Restarting work timer");
           this.startInterval();
         }
       }
@@ -222,19 +219,15 @@ class TimerService {
         }
       }
 
+      // Notify listeners of the updated state
       this.notifyListeners();
+      
+      // Update last fetch time
       this.lastFetchTime = now;
-      return { timer, breakinfo };
+      
+      return timer;
     } catch (error) {
-      if (error.name === 'AbortError') {
-        console.error("Request timed out after 10 seconds");
-      } else if (error.message && error.message.includes('ERR_INSUFFICIENT_RESOURCES')) {
-        console.error("Browser resource limit reached. Reducing fetch frequency.");
-        // Set a longer delay before next fetch
-        this.lastFetchTime = now + 60000; // Add 1 minute to throttle more aggressively
-      } else {
-        console.error("Fetch failed:", error);
-      }
+      console.error("Error fetching timer data:", error);
       return null;
     }
   }
@@ -583,7 +576,7 @@ class TimerService {
     if (!this.isRunning) {
       this.isRunning = true;
       this.isOnBreak = false;
-      this.updateInDB();
+      
       // Set session start time as formatted string
       this.sessionStart = this.getFormattedDateTime();
 
@@ -598,12 +591,18 @@ class TimerService {
         durationSeconds: null,
       });
 
-      // Save state
-      this.saveState();
+      // Notify listeners
       this.notifyListeners();
 
-      // Save to server
-      await this.updateInDB();
+      // Save directly to server instead of localStorage
+      try {
+        await this.updateInDB();
+        console.log("Timer started and saved to database");
+      } catch (err) {
+        console.error("Error saving timer start to database:", err);
+        // Still save to localStorage as fallback
+        this.saveState();
+      }
     }
   }
 
@@ -612,7 +611,6 @@ class TimerService {
     if (!this.isRunning) return;
 
     this.isRunning = false;
-    this.updateInDB();
 
     // Clear the interval
     if (this.intervalId) {
@@ -653,12 +651,18 @@ class TimerService {
       this.sessionStart = null;
     }
 
-    // Save state and notify listeners
-    this.saveState();
+    // Notify listeners
     this.notifyListeners();
 
-    // Update in DB
-    await this.updateInDB();
+    // Update directly in DB instead of localStorage
+    try {
+      await this.updateInDB();
+      console.log("Timer paused and saved to database");
+    } catch (err) {
+      console.error("Error saving timer pause to database:", err);
+      // Still save to localStorage as fallback
+      this.saveState();
+    }
   }
 
   // Start break
@@ -697,8 +701,6 @@ class TimerService {
             endTime
           );
 
-          //("Work session ended with duration:", lastWorkLog.duration);
-
           // Ensure workDuration is accurate
           this.workDuration += sessionDurationSeconds;
         }
@@ -725,12 +727,18 @@ class TimerService {
       durationSeconds: null,
     });
 
-    // Save state
-    this.saveState();
+    // Notify listeners
     this.notifyListeners();
 
-    // Update in DB
-    await this.updateInDB();
+    // Update directly in DB instead of localStorage
+    try {
+      await this.updateInDB();
+      console.log("Break started and saved to database");
+    } catch (err) {
+      console.error("Error saving break start to database:", err);
+      // Still save to localStorage as fallback
+      this.saveState();
+    }
   }
 
   // Start interval specifically for break tracking
@@ -782,8 +790,9 @@ class TimerService {
     if (!this.isOnBreak) {
       return;
     }
+    
     this.isOnBreak = false;
-    this.updateInDB();
+    
     // Clear the interval
     if (this.intervalId) {
       clearInterval(this.intervalId);
@@ -838,12 +847,18 @@ class TimerService {
     // Start the interval for work tracking
     this.startInterval();
 
-    // Save state and notify listeners
-    this.saveState();
+    // Notify listeners
     this.notifyListeners();
 
-    // Update in DB
-    await this.updateInDB();
+    // Update directly in DB instead of localStorage
+    try {
+      await this.updateInDB();
+      console.log("Break stopped and work timer restarted - saved to database");
+    } catch (err) {
+      console.error("Error saving break stop to database:", err);
+      // Still save to localStorage as fallback
+      this.saveState();
+    }
   }
 
   // Get total work duration in seconds
@@ -1132,38 +1147,34 @@ class TimerService {
     }
   }
   initialize() {
-    //("Initializing TimerService");
+    console.log("Initializing TimerService");
     
     // Update user ID first
     this.updateUserId();
-    //("Current userId:", this.userId);
+    console.log("Current userId:", this.userId);
     
     // If user just logged in, we should clear any existing timer data
     const justLoggedIn = localStorage.getItem('justLoggedIn');
     if (justLoggedIn === 'true') {
-      //("User just logged in, clearing existing timer data");
+      console.log("User just logged in, clearing existing timer data");
       this.clearAllData();
       localStorage.removeItem('justLoggedIn');
     }
 
     // Only proceed if we have a user ID
     if (!this.userId) {
-      //("No user ID available, skipping initialization");
+      console.log("No user ID available, skipping initialization");
       return;
     }
 
-    // Load state from localStorage first as a fallback
-    this.loadState();
-    
-    // Then fetch from database (this will override localStorage if successful)
-    //("Fetching timer data from database for user:", this.userId);
-    this.fetchTimerData().then((result) => {
-      //("Timer data loaded from database");
+    // Fetch data from server first
+    this.fetchTimerData().then(result => {
+      console.log("Fetch timer data result:", result);
       
-      if (result && result.timer) {
+      if (result) {
         // If timer was running according to the database, ensure it's running locally
-        if (result.timer.isRunning) {
-          //("Timer was running in database, ensuring it's running locally");
+        if (result.isRunning) {
+          console.log("Timer was running in database, ensuring it's running locally");
           
           // Make sure we stop any existing timers first
           this.stopAllTimers();
@@ -1172,26 +1183,32 @@ class TimerService {
           this.isRunning = true;
           
           // Start the appropriate interval
-          if (result.timer.isOnBreak) {
-            //("Starting break timer from database state");
+          if (result.isOnBreak) {
+            console.log("Starting break timer from database state");
+            this.isOnBreak = true;
             this.startBreakInterval();
           } else {
-            //("Starting work timer from database state");
+            console.log("Starting work timer from database state");
+            this.isOnBreak = false;
             this.startInterval();
           }
         }
+      } else {
+        // If server fetch failed, try to load from localStorage as fallback
+        console.log("Server fetch failed, trying localStorage as fallback");
+        this.loadState();
       }
-      
-      // Save the updated state to localStorage
-      this.saveState();
       
       // Notify listeners of the updated state
       this.notifyListeners();
     }).catch(err => {
       console.error("Error fetching timer data:", err);
+      // Load from localStorage as fallback
+      this.loadState();
     });
 
-    // Start auto-save
+    // Start auto-save with longer interval since we're saving directly on state changes
+    this.autoSaveInterval = 60000; // 1 minute
     this.startAutoSave();
   }
   // Completely stop all timers and intervals
@@ -1293,6 +1310,9 @@ const timerServiceInstance = new TimerService();
 
 // Export the instance
 export default timerServiceInstance;
+
+
+
 
 
 

@@ -4,16 +4,16 @@ const connectToDB = require("../db");
 // Create a new achievement
 exports.createAchievement = async (req, res) => {
   try {
-    const { image, title, goal } = req.body;
+    const { image, title, description } = req.body;
 
-    if (!image || !title || !goal) {
+    if (!image || !title) {
       return res
         .status(400)
-        .json({ message: "Image, title, and goal are required." });
+        .json({ message: "Image and title are required." });
     }
 
     const db = await connectToDB();
-    const newAchievement = { image, title, goal };
+    const newAchievement = { image, title, description };
 
     const result = await db
       .collection("achievements")
