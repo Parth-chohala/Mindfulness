@@ -20,7 +20,7 @@ exports.createFocusTimer = async (req, res) => {
     const db = await connectToDB();
     const newEntry = {
       userid: new ObjectId(userid),
-      startedAt, // Store as ISO string
+      loggedAt: new Date().toISOString(), // Store as ISO string
       workDuration,
       breakDuration,
       worklogs,
@@ -94,6 +94,20 @@ exports.getFocusTimerById = async (req, res) => {
     }
     const createdTimer = await createnewtimer(req.params.id);
     res.status(201).json(createdTimer);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+exports.getallFocusTimer = async (req, res) => {
+  try {
+    const db = await connectToDB();
+    const timers = await db
+      .collection("focustimer")
+      .find({
+        userid: req.params.id,
+      })
+      .toArray();
+    res.status(200).json(timers);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

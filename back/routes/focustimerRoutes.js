@@ -11,6 +11,9 @@ router.get('/focusTimers', focusTimerController.getFocusTimers);
 // Route to get a specific focus timer by ID
 router.get('/focusTimers/:id', focusTimerController.getFocusTimerById);
 
+
+router.get('/focusTimers/all/:id', focusTimerController.getallFocusTimer);
+
 // Route to update a focus timer by ID
 router.put('/focusTimers/:id', focusTimerController.updateFocusTimer);
 

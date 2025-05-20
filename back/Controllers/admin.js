@@ -107,9 +107,14 @@ exports.deleteAdmin = async (req, res) => {
 exports.loginAdmin = async (req, res) => {
   try {
     const { email, pass } = req.body;
+    
+    if (!email || !pass) {
+      return res.status(400).json({ message: "Email and password are required" });
+    }
+    
     const db = await connectToDB();
-
     const admin = await db.collection("admin").findOne({ email });
+    
     if (!admin) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
@@ -119,8 +124,14 @@ exports.loginAdmin = async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    res.status(200).json({ message: "Login successful", adminId: admin._id });
+    // Return admin info (excluding password)
+    res.status(200).json({ 
+      message: "Login successful", 
+      adminId: admin._id.toString(),
+      name: admin.name || email.split('@')[0]
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };

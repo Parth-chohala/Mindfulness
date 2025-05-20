@@ -99,9 +99,9 @@ router.post('/upload', imageUpload.single('image'), (req, res) => {
 
 // Define meditation session routes with file upload middleware
 router.post('/meditationSessions', meditationUpload.single('mediaFile'), meditationSessionController.createMeditationSession);
+router.put('/meditationSessions/:id', meditationUpload.single('mediaFile'), meditationSessionController.updateMeditationSession);
 router.get('/meditationSessions', meditationSessionController.getMeditationSessions);
 router.get('/meditationSessions/:id', meditationSessionController.getMeditationSessionById);
-router.put('/meditationSessions/:id', meditationUpload.single('mediaFile'), meditationSessionController.updateMeditationSession);
 router.delete('/meditationSessions/:id', meditationSessionController.deleteMeditationSession);
 
 module.exports = router;
