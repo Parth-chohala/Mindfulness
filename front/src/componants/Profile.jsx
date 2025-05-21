@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Edit, Save, X, LogOut, Clock, Coffee, Target, Calendar, BarChart2 } from 'lucide-react';
+import { User, Edit, Save, X, LogOut, Clock, Coffee, Target, Calendar, BarChart2, Award } from 'lucide-react';
 import axios from 'axios';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -58,6 +58,8 @@ const Profile = () => {
   });
   const [activeTab, setActiveTab] = useState('overview');
   const [chartsLoading, setChartsLoading] = useState(true);
+  const [achievements, setAchievements] = useState([]);
+  const [userAchievements, setUserAchievements] = useState([]);
   const navigate = useNavigate();
 
   // Get user ID from localStorage
@@ -67,6 +69,7 @@ const Profile = () => {
     fetchUserData();
     fetchTimerStats();
     fetchGoalStats();
+    fetchAchievements();
   }, [userId]); // Add userId as a dependency
 
   const fetchUserData = async () => {
@@ -88,6 +91,11 @@ const Profile = () => {
           phone: response.data.phone || '',
           address: response.data.address || '',
         });
+        
+        // Set user achievements if available
+        if (response.data.achievements && Array.isArray(response.data.achievements)) {
+          setUserAchievements(response.data.achievements);
+        }
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
@@ -202,6 +210,21 @@ const Profile = () => {
       });
     } catch (error) {
       console.error("Error fetching goal stats:", error);
+    } finally {
+      setChartsLoading(false);
+    }
+  };
+
+  // Fetch all achievements
+  const fetchAchievements = async () => {
+    try {
+      setChartsLoading(true);
+      const response = await axios.get('http://localhost:5000/api/achievements');
+      if (response.data) {
+        setAchievements(response.data);
+      }
+    } catch (error) {
+      console.error("Error fetching achievements:", error);
     } finally {
       setChartsLoading(false);
     }
@@ -489,34 +512,9 @@ const Profile = () => {
     const userId = localStorage.getItem('userId');
     //(`Logging out user: ${userId}`);
 
-    // Clear user data from localStorage
-    localStorage.removeItem('userId');
-    localStorage.removeItem('isAuthenticated');
-
-    // Clear ALL timer data
-    localStorage.removeItem('timerState');
-    localStorage.removeItem('timerLogs');
-
-    // Clear user-specific data
-    if (userId) {
-      localStorage.removeItem(`timerState_${userId}`);
-      localStorage.removeItem(`timerLogs_${userId}`);
-      localStorage.removeItem(`stickyNotes_${userId}`);
-    }
-
-    // Clear all possible user data
-    const allKeys = Object.keys(localStorage);
-    allKeys.forEach(key => {
-      if (key.startsWith('timerState_') || key.startsWith('timerLogs_') || key.startsWith('stickyNotes_')) {
-        localStorage.removeItem(key);
-      }
-    });
-
-    // Clear timer service data
-    if (timerService) {
-      timerService.clearAllData();
-    }
-
+    // Clear the ENTIRE localStorage
+    localStorage.clear();
+    
     // Show success message
     showSuccessToast("Logged out successfully");
 
@@ -534,9 +532,9 @@ const Profile = () => {
         await axios.delete(`http://localhost:5000/api/user/${userId}`);
         showSuccessToast("Account deleted successfully");
 
-        // Clear local storage and redirect to home page
-        localStorage.removeItem('userId');
-        localStorage.removeItem('isAuthenticated');
+        // Clear entire localStorage
+        localStorage.clear();
+        
         setTimeout(() => {
           navigate('/');
           window.location.reload();
@@ -547,6 +545,115 @@ const Profile = () => {
         setLoading(false);
       }
     }
+  };
+
+  // Render the achievements tab
+  const renderAchievementsTab = () => {
+    const imgurl = 'http://localhost:5000/content/';
+    
+    // Find full achievement objects for user's achievements
+    const earnedAchievements = achievements.filter(achievement => 
+      userAchievements.includes(achievement._id)
+    );
+    
+    // Get achievements not yet earned
+    const unearnedAchievements = achievements.filter(achievement => 
+      !userAchievements.includes(achievement._id)
+    );
+    
+    return (
+      <div className="space-y-4 max-w-3xl mx-auto px-4">
+        {/* Earned Achievements */}
+        <div className="bg-[#1e1e1e] p-3 sm:p-4 rounded-lg shadow-md">
+          <h3 className="text-lg font-semibold mb-3 text-white flex items-center">
+            <Award className="mr-2 text-teal-500" size={18} />
+            Your Achievements
+          </h3>
+          
+          {earnedAchievements.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {earnedAchievements.map(achievement => (
+                <div key={achievement._id} className="bg-[#2d3748] rounded-lg p-3 border border-teal-800 transition-all duration-200 hover:-translate-y-1">
+                  <div className="flex items-center">
+                    <div className="bg-teal-900/30 p-1.5 rounded-full mr-2 flex-shrink-0">
+                      {achievement.image ? (
+                        <img
+                          src={imgurl + achievement.image}
+                          alt={achievement.title}
+                          className="h-8 w-8 object-contain"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = 'https://via.placeholder.com/32?text=🏆';
+                          }}
+                        />
+                      ) : (
+                        <Award className="h-5 w-5 text-teal-500" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-white truncate-text">{achievement.title}</h3>
+                      {achievement.description && (
+                        <p className="text-gray-400 text-xs truncate-text">{achievement.description}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-[#2d3748] p-3 rounded-lg text-center">
+              <Award className="mx-auto h-8 w-8 text-gray-600 mb-2" />
+              <p className="text-gray-400 text-sm">No achievements earned yet</p>
+            </div>
+          )}
+        </div>
+        
+        {/* Available Achievements */}
+        <div className="bg-[#1e1e1e] p-3 sm:p-4 rounded-lg shadow-md">
+          <h3 className="text-lg font-semibold mb-3 text-white flex items-center">
+            <Award className="mr-2 text-gray-500" size={18} />
+            Available Achievements
+          </h3>
+          
+          {unearnedAchievements.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {unearnedAchievements.map(achievement => (
+                <div key={achievement._id} className="bg-[#2d3748] rounded-lg p-3 border border-gray-700 opacity-80 transition-all duration-200 hover:opacity-100">
+                  <div className="flex items-center">
+                    <div className="bg-gray-800 p-1.5 rounded-full mr-2 flex-shrink-0">
+                      {achievement.image ? (
+                        <img
+                          src={imgurl + achievement.image}
+                          alt={achievement.title}
+                          className="h-8 w-8 object-contain grayscale"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = 'https://via.placeholder.com/32?text=🏆';
+                          }}
+                        />
+                      ) : (
+                        <Award className="h-5 w-5 text-gray-500" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-400 truncate-text">{achievement.title}</h3>
+                      {achievement.description && (
+                        <p className="text-gray-500 text-xs truncate-text">{achievement.description}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-[#2d3748] p-3 rounded-lg text-center">
+              <Award className="mx-auto h-8 w-8 text-gray-600 mb-2" />
+              <p className="text-gray-400 text-sm">No more achievements available</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   if (loading && !user) {
@@ -578,7 +685,7 @@ const Profile = () => {
     <div className="min-h-screen bg-[#121212] text-white p-4 sm:p-6 overflow-x-hidden">
       <ToastContainer position="top-right" theme="dark" />
 
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         {/* Profile Header */}
         <div className="relative bg-gradient-to-r from-teal-900 to-teal-700 rounded-t-lg h-40 sm:h-56 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-teal-900/80 to-teal-700/80"></div>
@@ -650,14 +757,14 @@ const Profile = () => {
                   Statistics
                 </button>
                 <button
-                  onClick={() => setActiveTab('goals')}
+                  onClick={() => setActiveTab('achievements')}
                   className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'goals'
+                    activeTab === 'achievements'
                       ? 'border-teal-500 text-teal-400'
                       : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-700'
                   }`}
                 >
-                  Goals
+                  Achievements
                 </button>
               </nav>
             </div>
@@ -963,6 +1070,10 @@ const Profile = () => {
                 )}
               </div>
             )}
+
+            {activeTab === 'achievements' && (
+              renderAchievementsTab()
+            )}
           </div>
         </div>
       </div>
@@ -971,8 +1082,6 @@ const Profile = () => {
 };
 
 export default Profile;
-
-
 
 
 

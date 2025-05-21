@@ -6,6 +6,31 @@ import { showSuccessToast, showErrorToast, showInfoToast } from '../utils/toastS
 import AuthDialog from './AuthDialog';
 import WelcomeDialog from './WelcomeDialog';
 
+// Add debug logging
+const logDebug = (message, data) => {
+  // console.log(`[Home] ${message}`, data || '');
+};
+
+// Enhanced filterLogsByDate with better validation
+const filterLogsByDate = (logs, daysToKeep = 1) => {
+  if (!Array.isArray(logs)) return [];
+
+  const cutoffDate = new Date();
+  cutoffDate.setHours(0, 0, 0, 0);
+  cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+
+  return logs.filter(log => {
+    if (!log || !log.start) return false;
+
+    try {
+      const logDate = new Date(log.start);
+      return !isNaN(logDate.getTime()) && logDate >= cutoffDate;
+    } catch (e) {
+      return false;
+    }
+  });
+};
+
 // Enhanced sticky note component with Tailwind CSS
 const StickyNote = ({ note, onUpdate, onDelete, onColorChange, isAuthenticated, onAuthRequired }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -106,15 +131,8 @@ export default function Home() {
   const [workDuration, setWorkDuration] = useState(timerService.workDurationSetting || 0); // Default work duration (in minutes)
   const [breakDuration, setBreakDuration] = useState(timerService.breakDurationSetting || 0); // Default break duration (in minutes)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Dialog box visibility
-  const [logs, setLogs] = useState(() => {
-    try {
-      const savedLogs = localStorage.getItem("timerLogs");
-      return savedLogs ? JSON.parse(savedLogs) : [];
-    } catch (e) {
-      console.error("Error loading logs:", e);
-      return [];
-    }
-  }); // Logs for start/stop actions
+  const [logs, setLogs] = useState([]);
+
   const [stickyNotes, setStickyNotes] = useState([]); // State for sticky notes
   const [notifiedForWork, setNotifiedForWork] = useState(false); // Track if we've notified for current work session
   const [notifiedForBreak, setNotifiedForBreak] = useState(false); // Track if we've notified for current break session
@@ -138,14 +156,14 @@ export default function Home() {
 
   // Subscribe to timer service updates with better error handling
   useEffect(() => {
-    //("Home component mounted");
+    logDebug("Home component mounted");
 
     // Check if user just logged in
     const justLoggedIn = localStorage.getItem('justLoggedIn');
     if (justLoggedIn === 'true') {
-      //("User just logged in, clearing logs in Home component");
+      logDebug("User just logged in, clearing logs in Home component");
       setLogs([]);
-      localStorage.removeItem('timerLogs');
+      localStorage.removeItem('justLoggedIn');
     }
 
     // Load sticky notes
@@ -156,35 +174,57 @@ export default function Home() {
 
     // Get initial timer state
     const initialState = timerService.getState();
-    //("Initial timer state in Home:", initialState);
+    logDebug("Initial timer state in Home:", initialState);
     setTimerState(initialState);
 
-    // Initialize logs from timer service
-    if (initialState.workLogs || initialState.breakLogs) {
-      const combinedLogs = [
-        ...(initialState.workLogs || []).map(log => ({
-          type: 'session',
-          start: log.start,
-          end: log.end,
-          duration: log.duration,
-          durationSeconds: log.durationSeconds
-        })),
-        ...(initialState.breakLogs || []).map(log => ({
-          type: 'break',
-          start: log.start,
-          end: log.end,
-          duration: log.duration,
-          durationSeconds: log.durationSeconds
-        }))
-      ].sort((a, b) => new Date(b.start) - new Date(a.start));
+    // Load logs from timer service
+    const loadLogs = () => {
+      try {
+        const allLogs = timerService.getAllLogs();
 
-      //("Setting logs from timer service:", combinedLogs);
-      setLogs(combinedLogs);
-    }
+        if (!Array.isArray(allLogs)) {
+          logDebug("getAllLogs returned non-array:", allLogs);
+          return;
+        }
+
+        // Filter logs to keep only today's logs
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const todaysLogs = allLogs.filter(log => {
+          if (!log || !log.start) return false;
+
+          try {
+            const logDate = new Date(log.start);
+            return !isNaN(logDate.getTime()) && logDate >= today;
+          } catch (e) {
+            return false;
+          }
+        });
+
+        logDebug(`Loaded ${todaysLogs.length} logs for today from timer service`);
+
+        // Sort logs by start time (newest first)
+        const sortedLogs = [...todaysLogs].sort((a, b) => {
+          try {
+            return new Date(b.start) - new Date(a.start);
+          } catch (e) {
+            return 0;
+          }
+        });
+
+        setLogs(sortedLogs);
+      } catch (error) {
+        console.error("Error loading logs:", error);
+      }
+    };
+
+    // Load logs initially
+    loadLogs();
 
     // Subscribe to timer service updates
     const unsubscribe = timerService.subscribe(newState => {
-      //("Timer update received in Home:", newState);
+      logDebug("Timer update received in Home:", newState);
       setTimerState(prevState => {
         // Only update if the new state is different
         if (JSON.stringify(prevState) !== JSON.stringify(newState)) {
@@ -192,40 +232,17 @@ export default function Home() {
         }
         return prevState;
       });
+
+      // Reload logs when timer state changes
+      loadLogs();
     });
 
     // Clean up on unmount
     return () => {
-      //("Home component unmounting");
+      logDebug("Home component unmounting");
       unsubscribe();
     };
   }, []);
-  // Home component maintains its own logs state
-  useEffect(() => {
-    //("Logs updated in Home:", logs);
-    localStorage.setItem('timerLogs', JSON.stringify(logs));
-
-    // Only update timer service logs if we have logs and they're different
-    if (logs && logs.length > 0) {
-      const workLogs = logs.filter(val => val.type === "session");
-      const breakLogs = logs.filter(val => val.type === "break");
-
-      // Check if logs are different from timer service logs
-      const timerWorkLogs = timerService.workLogs || [];
-      const timerBreakLogs = timerService.breakLogs || [];
-
-      const workLogsDifferent = JSON.stringify(workLogs) !== JSON.stringify(timerWorkLogs);
-      const breakLogsDifferent = JSON.stringify(breakLogs) !== JSON.stringify(timerBreakLogs);
-
-      if (workLogsDifferent || breakLogsDifferent) {
-        //("Updating timer service logs from Home component");
-        timerService.workLogs = workLogs;
-        timerService.breakLogs = breakLogs;
-        timerService.saveState();
-        timerService.hasChangedSinceLastSave = true;
-      }
-    }
-  }, [logs]);
 
   // Add function to get user-specific localStorage key
   const getUserSpecificKey = (baseKey) => {
@@ -398,106 +415,169 @@ export default function Home() {
   const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
 
   // Start timer function
-  const startTimer = () => {
-    if (!isAuthenticated) {
-      setShowWelcomeDialog(true);
-      return;
-    }
-
-    timerService.startTimer();
-    setNotifiedForWork(false); // Reset notification flag for new work session
-    // Log start of work session (start time only)
-    setLogs((prevLogs) => [
-      { type: 'session', start: getFormattedCurrentTime(), end: null, duration: null },
-      ...prevLogs, // New logs come at the top
-    ]);
-  };
-  const pauseTimer = () => {
+  const handleStartTimer = () => {
     if (!isAuthenticated) {
       setShowAuthDialog(true);
       return;
     }
-    timerService.pauseTimer();
 
-    // Log end of work session (with start and end time in same line)
-    setLogs((prevLogs) => {
-      const updatedLogs = [...prevLogs];
-      const lastSession = updatedLogs.find((log) => log.type === 'session' && log.start && !log.end);
-
-      if (lastSession) {
-        const endTime = getFormattedCurrentTime();
-        const startDate = new Date(lastSession.start);
-        const endDate = new Date(endTime);
-        const durationSeconds = Math.floor((endDate - startDate) / 1000);
-
-        lastSession.end = endTime; // Set the end time for the last session
-        lastSession.duration = calculateDuration(lastSession.start, endTime); // Calculate the human-readable duration
-        lastSession.durationSeconds = durationSeconds; // Store the raw duration in seconds
+    try {
+      // If we're on a break, stop it first
+      if (timerState.isRunning && timerState.isOnBreak) {
+        timerService.stopBreak();
+        return;
       }
 
-      return updatedLogs;
-    });
-  };
+      // If we're already running a work session, pause it first
+      if (timerState.isRunning && !timerState.isOnBreak) {
+        timerService.pauseTimer();
+        return;
+      }
 
-  const stopBreak = () => {
+      // Start a new timer
+      timerService.startTimer();
+      logDebug("Timer started");
+
+      // Add new work session log
+      setLogs((prevLogs) => [
+        { type: 'session', start: getFormattedCurrentTime(), end: null, duration: null, durationSeconds: null },
+        ...prevLogs, // New logs come at the top
+      ]);
+    } catch (error) {
+      console.error("Error starting timer:", error);
+      showErrorToast("Failed to start timer. Please try again.");
+    }
+  };
+  const handlePauseTimer = () => {
     if (!isAuthenticated) {
       setShowAuthDialog(true);
       return;
     }
-    timerService.stopBreak();
 
-    // Log end of break
-    setLogs((prevLogs) => {
-      const updatedLogs = [...prevLogs];
-      const lastBreak = updatedLogs.find((log) => log.type === 'break' && log.start && !log.end);
+    try {
+      timerService.pauseTimer();
+      logDebug("Timer paused");
 
-      if (lastBreak) {
-        const endTime = getFormattedCurrentTime();
-        const startDate = new Date(lastBreak.start);
-        const endDate = new Date(endTime);
-        const durationSeconds = Math.floor((endDate - startDate) / 1000);
+      // Update logs to reflect the paused timer
+      setLogs((prevLogs) => {
+        const updatedLogs = [...prevLogs];
 
-        lastBreak.end = endTime; // Set the end time for the last break
-        lastBreak.duration = calculateDuration(lastBreak.start, endTime); // Calculate the human-readable duration
-        lastBreak.durationSeconds = durationSeconds; // Store the raw duration in seconds
-      }
+        // Find the last session or break without an end time
+        const lastLog = updatedLogs.find((log) => !log.end);
 
-      return updatedLogs;
-    });
+        if (lastLog) {
+          const endTime = getFormattedCurrentTime();
+          const startDate = new Date(lastLog.start);
+          const endDate = new Date(endTime);
+          const durationSeconds = Math.floor((endDate - startDate) / 1000);
 
-    // Reset notification flag for new work session
-    setNotifiedForWork(false);
+          lastLog.end = endTime;
+          lastLog.duration = calculateDuration(lastLog.start, endTime);
+          lastLog.durationSeconds = durationSeconds;
+        }
 
-    // Add new work session log
-    setLogs((prevLogs) => [
-      { type: 'session', start: getFormattedCurrentTime(), end: null, duration: null, durationSeconds: null },
-      ...prevLogs, // New logs come at the top
-    ]);
+        return updatedLogs;
+      });
+    } catch (error) {
+      console.error("Error pausing timer:", error);
+      showErrorToast("Failed to pause timer. Please try again.");
+    }
+  };
+
+  const handleEndBreak = () => {
+    if (!isAuthenticated) {
+      setShowAuthDialog(true);
+      return;
+    }
+
+    try {
+      timerService.stopBreak();
+
+      // Log end of break
+      setLogs((prevLogs) => {
+        const updatedLogs = [...prevLogs];
+        const lastBreak = updatedLogs.find((log) => log.type === 'break' && log.start && !log.end);
+
+        if (lastBreak) {
+          const endTime = getFormattedCurrentTime();
+          const startDate = new Date(lastBreak.start);
+          const endDate = new Date(endTime);
+          const durationSeconds = Math.floor((endDate - startDate) / 1000);
+
+          lastBreak.end = endTime;
+          lastBreak.duration = calculateDuration(lastBreak.start, endTime);
+          lastBreak.durationSeconds = durationSeconds;
+        }
+
+        return updatedLogs;
+      });
+
+      // Reset notification flag for new work session
+      setNotifiedForWork(false);
+
+      // Add new work session log
+      setLogs((prevLogs) => [
+        { type: 'session', start: getFormattedCurrentTime(), end: null, duration: null, durationSeconds: null },
+        ...prevLogs, // New logs come at the top
+      ]);
+    } catch (error) {
+      console.error("Error ending break:", error);
+      showErrorToast("Failed to end break. Please try again.");
+    }
   };
 
   // Start break function
-  const startBreak = () => {
-    if (!isAuthenticated) {
-      setShowAuthDialog(true);
-      return;
-    }
-    //('Starting break...');
-    timerService.startBreak();
-    setNotifiedForBreak(false); // Reset notification flag for new break session
-
-    // Log start of break
-    setLogs((prevLogs) => [
-      { type: 'break', start: getFormattedCurrentTime(), end: null, duration: null },
-      ...prevLogs, // New logs come at the top
-    ]);
-  };
-
-  // Handle break function (called when break button is clicked)
   const handleBreak = () => {
     if (!isAuthenticated) {
       setShowAuthDialog(true);
       return;
     }
+
+    try {
+      // First, end the current work session if running
+      if (timerState.isRunning && !timerState.isOnBreak) {
+        // Log end of work session
+        setLogs((prevLogs) => {
+          const updatedLogs = [...prevLogs];
+          const lastSession = updatedLogs.find((log) => log.type === 'session' && log.start && !log.end);
+
+          if (lastSession) {
+            const endTime = getFormattedCurrentTime();
+            const startDate = new Date(lastSession.start);
+            const endDate = new Date(endTime);
+            const durationSeconds = Math.floor((endDate - startDate) / 1000);
+
+            lastSession.end = endTime;
+            lastSession.duration = calculateDuration(lastSession.start, endTime);
+            lastSession.durationSeconds = durationSeconds;
+          }
+
+          return updatedLogs;
+        });
+      }
+
+      // Then start the break
+      timerService.startBreak();
+      setNotifiedForBreak(false);
+      logDebug("Break started");
+
+      // Add new break log
+      setLogs((prevLogs) => [
+        { type: 'break', start: getFormattedCurrentTime(), end: null, duration: null, durationSeconds: null },
+        ...prevLogs, // New logs come at the top
+      ]);
+    } catch (error) {
+      console.error("Error starting break:", error);
+      showErrorToast("Failed to start break. Please try again.");
+    }
+
+
+    // Handle break function (called when break button is clicked)
+    // const handleBreak = () => {
+    //   if (!isAuthenticated) {
+    //     setShowAuthDialog(true);
+    //     return;
+    //   }
     // First, end the current work session if running
     if (timerState.isRunning && !timerState.isOnBreak) {
       // Log end of work session
@@ -523,7 +603,8 @@ export default function Home() {
     }
 
     // Then start the break
-    startBreak();
+    // Then start the break
+    timerService.startBreak();
   };
 
   // Add state for error handling
@@ -556,7 +637,7 @@ export default function Home() {
       // Update the timer service settings ONLY when Save is clicked
       timerService.setWorkDurationSetting(parseInt(newWorkDuration));
       timerService.setBreakDurationSetting(parseInt(newBreakDuration));
-      
+
       // Update the component state to match
       setWorkDuration(parseInt(newWorkDuration));
       setBreakDuration(parseInt(newBreakDuration));
@@ -734,11 +815,11 @@ export default function Home() {
   }, []);
 
   const handleStart = () => {
-    startTimer();
+    handleStartTimer();
   };
 
   const handlePause = () => {
-    pauseTimer();
+    handlePauseTimer();
   };
 
   // const handleBreak = () => {
@@ -746,7 +827,7 @@ export default function Home() {
   // };
 
   const handleStopBreak = () => {
-    stopBreak();
+    handleEndBreak();
   };
 
   const handleSettings = () => {
@@ -781,12 +862,23 @@ export default function Home() {
 
   // Add function to handle manual save
   const handleManualSave = async () => {
-    setSaveStatus({ saving: true, lastSaved: saveStatus.lastSaved });
-    const success = await timerService.saveTimerData();
-    if (success) {
-      setSaveStatus({ saving: false, lastSaved: new Date() });
-    } else {
+    try {
+      setSaveStatus({ saving: true, lastSaved: saveStatus.lastSaved });
+
+      // Force timer service to save all data
+      const success = await timerService.saveTimerData();
+
+      if (success) {
+        setSaveStatus({ saving: false, lastSaved: new Date() });
+        showSuccessToast("Timer data saved successfully!");
+      } else {
+        setSaveStatus({ saving: false, lastSaved: saveStatus.lastSaved });
+        showErrorToast("Failed to save timer data. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error saving timer data:", error);
       setSaveStatus({ saving: false, lastSaved: saveStatus.lastSaved });
+      showErrorToast("An error occurred while saving timer data.");
     }
   };
 
@@ -840,6 +932,53 @@ export default function Home() {
     }
   }, [timerState.isRunning]);
 
+  // Clean up the synchronization mechanism
+  useEffect(() => {
+    // Create a synchronization interval to ensure the component stays in sync with the timer service
+    const syncInterval = setInterval(() => {
+      if (timerState.isRunning) {
+        // Get the current state from the timer service
+        const currentState = timerService.getState();
+        
+        // Check if the seconds have changed
+        if (currentState.seconds !== timerState.seconds) {
+          setTimerState(currentState);
+        }
+        
+        // Check if timer service is still running
+        if (currentState.isRunning && !timerService.intervalId) {
+          if (currentState.isOnBreak) {
+            timerService.startBreakInterval();
+          } else {
+            timerService.startInterval();
+          }
+        }
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(syncInterval);
+    };
+  }, [timerState.isRunning, timerState.seconds]);
+
+  // Clean up the visibility change handler
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        // Force a sync with timer service when tab becomes visible
+        const currentState = timerService.getState();
+        setTimerState(currentState);
+      }
+    };
+    
+    // Add visibility change listener
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
   const handleCloseAuthDialog = () => {
     setShowAuthDialog(false);
   };
@@ -850,6 +989,29 @@ export default function Home() {
 
   const handleRequestAuth = () => {
     setShowAuthDialog(true);
+  };
+
+  // Fix the log display in Home component
+  const renderLogs = () => {
+    if (!logs || logs.length === 0) {
+      return <p>No activity logs yet.</p>;
+    }
+
+    return logs.map((log, index) => {
+      // Ensure log has a valid type
+      const logType = log.type === 'break' ? 'Break' : 'Session';
+
+      // Format the log entry
+      return (
+        <div key={index} className="log-entry">
+          <span className={log.type === 'break' ? 'break-log' : 'session-log'}>
+            {logType}
+          </span>{' '}
+          started at {log.start} ended at {log.end || '---'} - Duration:{' '}
+          {log.duration || '---'}
+        </div>
+      );
+    });
   };
 
   return (
@@ -927,7 +1089,7 @@ export default function Home() {
                 >
                   <Settings size={16} /> Settings
                 </button>
-                
+
                 <button
                   className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all
                     ${timerState.isOnBreak

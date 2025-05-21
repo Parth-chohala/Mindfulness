@@ -179,7 +179,7 @@ class GoalService {
       // Get all goals of type "time"
       const goals = await this.getAllGoals();
       const timeGoals = goals.filter(
-        (goal) => goal.goalType === "time" && goal.status !== "completed"
+        (goal) => goal.goalType === "time" && goal.status === "active"
       );
 
       // Skip if no active time goals
@@ -189,6 +189,15 @@ class GoalService {
 
       // For each relevant goal, add the focus duration to progress
       for (const goal of timeGoals) {
+        if (goal.progressValue >= goal.targetValue) {
+          goal.progressValue = goal.targetValue;
+          await this.updateGoalProgress(
+            goal._id,
+            goal.progressValue,
+            "completed"
+          );
+          continue;
+        }
         await this.updateGoalProgress(
           goal._id,
           goal.progressValue + durationInSeconds
@@ -217,14 +226,14 @@ class GoalService {
       for (const goal of meditationGoals) {
         // Current progress in seconds
         const currentProgress = goal.progressValue;
-        
+
         // Add new duration to progress
         const newProgress = currentProgress + durationInSeconds;
-        
+
         // Cap at target value if needed
         const targetValue = goal.targetValue;
         const cappedProgress = Math.min(newProgress, targetValue);
-        
+
         // Update the goal with new progress value
         await this.updateGoalProgress(goal._id, cappedProgress);
       }
@@ -243,11 +252,11 @@ class GoalService {
         },
         body: JSON.stringify({ progressValue: newProgress }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`Error updating goal progress: ${response.statusText}`);
       }
-      
+
       return await response.json();
     } catch (error) {
       console.error(`Error updating goal progress for ${id}:`, error);
@@ -257,8 +266,3 @@ class GoalService {
 }
 
 export default new GoalService();
-
-
-
-
-

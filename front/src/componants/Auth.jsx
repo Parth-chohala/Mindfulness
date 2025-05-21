@@ -1,5 +1,6 @@
 import { showSuccessToast, showErrorToast } from '../utils/toastStyles';
 
+// Enhanced login function to properly clear timer data
 const handleLogin = async (e) => {
   e.preventDefault();
   setLoading(true);
@@ -30,7 +31,7 @@ const handleLogin = async (e) => {
       // Set flag to indicate fresh login
       localStorage.setItem('justLoggedIn', 'true');
       
-      //("Login successful, userId set to:", response.data.user._id);
+      console.log("Login successful, userId set to:", response.data.user._id);
       showSuccessToast('Login successful!');
       onClose();
       
@@ -74,5 +75,6 @@ const handleRegister = async (e) => {
     setLoading(false);
   }
 };
+
 
 

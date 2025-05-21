@@ -42,16 +42,8 @@ const Navbar = () => {
   // Function to handle logout
   const handleLogout = () => {
     if (window.confirm('Are you sure you want to log out?')) {
-      localStorage.removeItem('userId');
-      localStorage.removeItem('isAuthenticated');
-      
-      // Clear any user-specific data
-      const allKeys = Object.keys(localStorage);
-      allKeys.forEach(key => {
-        if (key.startsWith('timerState_') || key.startsWith('timerLogs_') || key.startsWith('stickyNotes_')) {
-          localStorage.removeItem(key);
-        }
-      });
+      // Clear the entire localStorage
+      localStorage.clear();
       
       // Redirect to home page
       navigate('/');

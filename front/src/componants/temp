@@ -1,0 +1,384 @@
+import React, { useState, useEffect } from 'react';
+import { User, Edit, Save, X, LogOut, Clock, Coffee, Target, Calendar, BarChart2, Award } from 'lucide-react';
+import axios from 'axios';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { useNavigate } from 'react-router-dom';
+import timerService from '../services/TimerService';
+import { showSuccessToast, showErrorToast } from '../utils/toastStyles';
+import { Bar, Pie, Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+
+ChartJS.register(
+  ArcElement,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
+const Profile = () => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+  });
+  const [errors, setErrors] = useState({});
+  const [timerStats, setTimerStats] = useState({
+    totalWorkTime: 0,
+    totalBreakTime: 0,
+    sessionsPerDay: [],
+    breaksPerDay: [],
+  });
+  const [goalStats, setGoalStats] = useState({
+    total: 0,
+    completed: 0,
+    pending: 0,
+    byCategory: {},
+  });
+  const [activeTab, setActiveTab] = useState('overview');
+  const [chartsLoading, setChartsLoading] = useState(true);
+  const [achievements, setAchievements] = useState([]);
+  const [userAchievements, setUserAchievements] = useState([]);
+  const navigate = useNavigate();
+
+  // Get user ID from localStorage
+  const userId = localStorage.getItem('userId');
+
+  useEffect(() => {
+    fetchUserData();
+    fetchTimerStats();
+    fetchGoalStats();
+    fetchAchievements();
+  }, [userId]); // Add userId as a dependency
+
+  const fetchUserData = async () => {
+    try {
+      setLoading(true);
+      // Check if user is logged in
+      if (!userId) {
+        showErrorToast("Please login to view your profile");
+        setLoading(false);
+        return;
+      }
+
+      const response = await axios.get(`http://localhost:5000/api/user/${userId}`);
+      if (response.data) {
+        setUser(response.data);
+        setFormData({
+          name: response.data.name || '',
+          email: response.data.email || '',
+          phone: response.data.phone || '',
+          address: response.data.address || '',
+        });
+        
+        // Set user achievements if available
+        if (response.data.achievements && Array.isArray(response.data.achievements)) {
+          setUserAchievements(response.data.achievements);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching user data:", error);
+      showErrorToast("Failed to load profile data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch all achievements
+  const fetchAchievements = async () => {
+    try {
+      setChartsLoading(true);
+      const response = await axios.get('http://localhost:5000/api/achievements');
+      if (response.data) {
+        setAchievements(response.data);
+      }
+    } catch (error) {
+      console.error("Error fetching achievements:", error);
+    } finally {
+      setChartsLoading(false);
+    }
+  };
+
+  // Render the account statistics section with achievements instead of goals
+  const renderAccountStats = () => {
+    return (
+      <div className="bg-[#1e1e1e] rounded-lg p-4 sm:p-6">
+        <h3 className="text-xl font-semibold mb-4 text-white">Account Statistics</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-[#121212] p-4 rounded-lg">
+            <div className="text-gray-400 text-sm">Member Since</div>
+            <div className="text-white text-lg font-medium">
+              {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+            </div>
+          </div>
+          
+          <div className="bg-[#121212] p-4 rounded-lg">
+            <div className="text-gray-400 text-sm">Achievements</div>
+            <div className="text-white text-lg font-medium">
+              {userAchievements.length} / {achievements.length}
+            </div>
+          </div>
+          
+          <div className="bg-[#121212] p-4 rounded-lg">
+            <div className="text-gray-400 text-sm">Focus Time</div>
+            <div className="text-white text-lg font-medium">
+              {formatTime(timerStats.totalWorkTime)}
+            </div>
+          </div>
+          
+          <div className="bg-[#121212] p-4 rounded-lg">
+            <div className="text-gray-400 text-sm">Break Time</div>
+            <div className="text-white text-lg font-medium">
+              {formatTime(timerStats.totalBreakTime)}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Add a new tab for achievements
+  const renderAchievementsTab = () => {
+    const imgurl = 'http://localhost:5000/uploads/';
+    
+    // Find full achievement objects for user's achievements
+    const earnedAchievements = achievements.filter(achievement => 
+      userAchievements.includes(achievement._id)
+    );
+    
+    // Get achievements not yet earned
+    const unearnedAchievements = achievements.filter(achievement => 
+      !userAchievements.includes(achievement._id)
+    );
+    
+    return (
+      <div className="space-y-6">
+        {/* Earned Achievements */}
+        <div className="bg-[#1e1e1e] rounded-lg p-4 sm:p-6">
+          <h3 className="text-xl font-semibold mb-4 text-white">Your Achievements</h3>
+          
+          {earnedAchievements.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {earnedAchievements.map(achievement => (
+                <div key={achievement._id} className="bg-[#121212] rounded-lg p-4 border border-teal-800">
+                  <div className="flex items-center mb-3">
+                    <div className="bg-teal-900/30 p-2 rounded-full mr-3">
+                      {achievement.image ? (
+                        <img
+                          src={imgurl + achievement.image}
+                          alt={achievement.title}
+                          className="h-10 w-10 object-contain"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = 'https://via.placeholder.com/40?text=🏆';
+                          }}
+                        />
+                      ) : (
+                        <Award className="h-6 w-6 text-teal-500" />
+                      )}
+                    </div>
+                    <h3 className="text-lg font-semibold text-white">{achievement.title}</h3>
+                  </div>
+                  
+                  {achievement.description && (
+                    <p className="text-gray-400 text-sm">{achievement.description}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-[#121212] p-6 rounded-lg text-center">
+              <Award className="mx-auto h-12 w-12 text-gray-600 mb-4" />
+              <p className="text-gray-400">You haven't earned any achievements yet. Keep going!</p>
+            </div>
+          )}
+        </div>
+        
+        {/* Available Achievements */}
+        <div className="bg-[#1e1e1e] rounded-lg p-4 sm:p-6">
+          <h3 className="text-xl font-semibold mb-4 text-white">Available Achievements</h3>
+          
+          {unearnedAchievements.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {unearnedAchievements.map(achievement => (
+                <div key={achievement._id} className="bg-[#121212] rounded-lg p-4 opacity-70">
+                  <div className="flex items-center mb-3">
+                    <div className="bg-gray-800 p-2 rounded-full mr-3">
+                      {achievement.image ? (
+                        <img
+                          src={imgurl + achievement.image}
+                          alt={achievement.title}
+                          className="h-10 w-10 object-contain grayscale"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = 'https://via.placeholder.com/40?text=🏆';
+                          }}
+                        />
+                      ) : (
+                        <Award className="h-6 w-6 text-gray-500" />
+                      )}
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-400">{achievement.title}</h3>
+                  </div>
+                  
+                  {achievement.description && (
+                    <p className="text-gray-500 text-sm">{achievement.description}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-[#121212] p-6 rounded-lg text-center">
+              <p className="text-gray-400">Congratulations! You've earned all available achievements!</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Update the tabs to include achievements instead of goals
+  return (
+    <div className="bg-[#121212] min-h-screen text-white p-4 sm:p-6 max-w-4xl mx-auto">
+      {/* Profile header with banner and avatar */}
+      <div className="relative mb-8">
+        <div className="h-40 bg-gradient-to-r from-teal-900 to-teal-700 rounded-lg"></div>
+        <div className="absolute left-6 -bottom-12">
+          <div className="bg-[#121212] rounded-full p-1">
+            <div className="bg-teal-800 rounded-full p-4 w-24 h-24 flex items-center justify-center">
+              <User size={48} className="text-white" />
+            </div>
+          </div>
+        </div>
+        <div className="absolute right-4 top-4">
+          <button
+            onClick={() => setEditing(!editing)}
+            className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-md flex items-center gap-2 text-sm"
+          >
+            {editing ? (
+              <>
+                <X size={16} /> Cancel
+              </>
+            ) : (
+              <>
+                <Edit size={16} /> Edit Profile
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* User name and tabs */}
+      <div className="mt-16 mb-6">
+        <h1 className="text-3xl font-bold text-white">{user?.name || 'User'}</h1>
+        
+        <div className="mt-6 border-b border-gray-700">
+          <div className="flex space-x-4">
+            <button
+              className={`pb-2 px-1 ${
+                activeTab === 'overview'
+                  ? 'text-teal-500 border-b-2 border-teal-500 font-medium'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+              onClick={() => setActiveTab('overview')}
+            >
+              Overview
+            </button>
+            <button
+              className={`pb-2 px-1 ${
+                activeTab === 'statistics'
+                  ? 'text-teal-500 border-b-2 border-teal-500 font-medium'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+              onClick={() => setActiveTab('statistics')}
+            >
+              Statistics
+            </button>
+            <button
+              className={`pb-2 px-1 ${
+                activeTab === 'achievements'
+                  ? 'text-teal-500 border-b-2 border-teal-500 font-medium'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+              onClick={() => setActiveTab('achievements')}
+            >
+              Achievements
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tab content */}
+      {loading ? (
+        <div className="flex justify-center my-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-500"></div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {activeTab === 'overview' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Personal Information */}
+              <div className="bg-[#1e1e1e] rounded-lg p-4 sm:p-6">
+                <h3 className="text-xl font-semibold mb-4 text-white">Personal Information</h3>
+                {editing ? (
+                  <form className="space-y-4">
+                    {/* Form fields */}
+                    {/* ... existing form fields ... */}
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-gray-400 text-sm">Email</div>
+                      <div className="text-white">{user?.email || 'Not provided'}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 text-sm">Phone</div>
+                      <div className="text-white">{user?.phone || 'Not provided'}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400 text-sm">Address</div>
+                      <div className="text-white">{user?.address || 'Not provided'}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Account Statistics */}
+              {renderAccountStats()}
+            </div>
+          )}
+
+          {activeTab === 'statistics' && (
+            <div className="space-y-6">
+              {/* ... existing statistics content ... */}
+            </div>
+          )}
+
+          {activeTab === 'achievements' && renderAchievementsTab()}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Profile;
