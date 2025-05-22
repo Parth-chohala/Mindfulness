@@ -116,33 +116,45 @@ const Profile = () => {
 
       console.log("Fetching timer stats for user:", userId);
       
-      // Fetch timer data from API instead of localStorage
-      const response = await axios.get(`http://localhost:5000/api/focusTimers/${userId}`);
+      // Fetch ALL timer data from API using the new endpoint
+      const response = await axios.get(`http://localhost:5000/api/focusTimers/all/${userId}`);
       console.log("API response:", response.data);
       
-      if (!response.data) {
+      if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
         console.warn("No timer data returned from API");
         return;
       }
       
-      // Extract work logs and break logs from API response
-      const workLogs = response.data.worklogs || [];
-      const breakLogs = response.data.breaklogs || [];
+      // Process the array of timer data
+      let totalWorkTime = 0;
+      let totalBreakTime = 0;
+      const workLogs = [];
+      const breakLogs = [];
       
-      console.log("Retrieved work logs:", workLogs.length, "break logs:", breakLogs.length);
-      
-      // Calculate total work and break time
-      const totalWorkTime = response.data.workDuration || 
-        workLogs.reduce((total, log) => {
-          return total + (log.durationSeconds || 0);
-        }, 0);
-      
-      const totalBreakTime = response.data.breakDuration || 
-        breakLogs.reduce((total, log) => {
-          return total + (log.durationSeconds || 0);
-        }, 0);
+      // Process each timer record
+      response.data.forEach(timerRecord => {
+        // Add to total durations
+        if (timerRecord.workDuration) {
+          totalWorkTime += timerRecord.workDuration;
+        }
+        
+        if (timerRecord.breakDuration) {
+          totalBreakTime += timerRecord.breakDuration;
+        }
+        
+        // Collect work logs
+        if (timerRecord.worklogs && Array.isArray(timerRecord.worklogs)) {
+          workLogs.push(...timerRecord.worklogs);
+        }
+        
+        // Collect break logs
+        if (timerRecord.breaklogs && Array.isArray(timerRecord.breaklogs)) {
+          breakLogs.push(...timerRecord.breaklogs);
+        }
+      });
       
       console.log("Total work time:", totalWorkTime, "Total break time:", totalBreakTime);
+      console.log("Work logs:", workLogs.length, "Break logs:", breakLogs.length);
       
       // Group sessions by day
       const sessionsPerDay = groupLogsByDay(workLogs);
@@ -253,7 +265,7 @@ const Profile = () => {
     }));
   };
 
-  // Get last 7 days as array of date strings
+  // Helper function to get the last 7 days
   const getLast7Days = () => {
     const dates = [];
     for (let i = 6; i >= 0; i--) {
@@ -264,11 +276,13 @@ const Profile = () => {
     return dates;
   };
 
-  // Format seconds to hours and minutes
+  // Helper function to format time in hours and minutes
   const formatTime = (seconds) => {
+    if (!seconds) return '0 min';
+
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes}m`;
     }
@@ -1082,6 +1096,8 @@ const Profile = () => {
 };
 
 export default Profile;
+
+
 
 
 

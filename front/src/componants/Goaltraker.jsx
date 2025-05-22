@@ -16,9 +16,9 @@ ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Tooltip, Le
 
 export default function GoalTracker() {
   const [goals, setGoals] = useState([]);
-  const [form, setForm] = useState({ 
-    title: "", 
-    description: "", 
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
     category: "task", // This will be mapped to goalType when sending to API
     aim: "" // This will be mapped to targetValue when sending to API
   });
@@ -27,10 +27,15 @@ export default function GoalTracker() {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [goalTypeFilter, setGoalTypeFilter] = useState("all");
+  const [goalStatusFilter, setGoalStatusFilter] = useState("all");
+
+  // Add this line to fix the error
+  const setShowAddGoalModal = () => setShowForm(true);
 
   // Add a ref for the title input
   const titleInputRef = useRef(null);
-  
+
   // Focus the title input when the modal opens
   useEffect(() => {
     if (showForm && titleInputRef.current) {
@@ -76,16 +81,16 @@ export default function GoalTracker() {
 
     try {
       setLoading(true);
-      
+
       // Create a copy of the form data to modify
       const goalData = { ...form };
-      
+
       // Convert hours to seconds for time and meditation categories
       if (goalData.category === "time" || goalData.category === "meditation") {
         // Convert hours to seconds (1 hour = 3600 seconds)
         const hoursValue = parseFloat(goalData.aim);
         const secondsValue = Math.round(hoursValue * 3600);
-        
+
         // Map form fields to API fields
         goalData.targetValue = secondsValue;
         goalData.goalType = goalData.category;
@@ -94,7 +99,7 @@ export default function GoalTracker() {
         goalData.targetValue = parseInt(goalData.aim, 10);
         goalData.goalType = goalData.category;
       }
-      
+
       if (editingId) {
         // Update existing goal
         await goalService.updateGoal(editingId, goalData);
@@ -103,7 +108,7 @@ export default function GoalTracker() {
         // Create new goal
         await goalService.createGoal(goalData);
       }
-      
+
       // Reset form and fetch updated goals
       setForm({ title: "", description: "", category: "task", aim: "" });
       setShowForm(false);
@@ -133,12 +138,12 @@ export default function GoalTracker() {
   const editGoal = (goal) => {
     // Convert seconds back to hours for time and meditation goals
     let aimValue = goal.targetValue?.toString() || "";
-    
+
     if (goal.goalType === "time" || goal.goalType === "meditation") {
       // Convert seconds to hours
       aimValue = (goal.targetValue / 3600).toFixed(1);
     }
-    
+
     setForm({
       title: goal.title,
       description: goal.description || "",
@@ -203,9 +208,9 @@ export default function GoalTracker() {
       legend: { display: false },
     },
     scales: {
-      x: { 
-        beginAtZero: true, 
-        ticks: { stepSize: 1 } 
+      x: {
+        beginAtZero: true,
+        ticks: { stepSize: 1 }
       },
     },
   };
@@ -241,12 +246,19 @@ export default function GoalTracker() {
     </div>
   );
 
+  // Filtered goals based on filters
+  const filteredGoals = goals.filter(goal => {
+    const typeMatch = goalTypeFilter === "all" || (goal.goalType || "task") === goalTypeFilter;
+    const statusMatch = goalStatusFilter === "all" || goal.status === goalStatusFilter;
+    return typeMatch && statusMatch;
+  });
+
   return (
-    <div className="bg-[#121212] min-h-screen text-white p-4 sm:p-6 max-w-4xl mx-auto overflow-x-hidden">
+    <div className=" min-h-screen text-white p-4 sm:p-6 max-w-4xl mx-auto overflow-x-hidden">
       {error && (
         <div className="bg-red-900/50 border border-red-700 text-red-200 p-3 rounded mb-4">
           {error}
-          <button 
+          <button
             className="ml-2 text-red-300 hover:text-red-100"
             onClick={() => setError(null)}
           >
@@ -254,28 +266,49 @@ export default function GoalTracker() {
           </button>
         </div>
       )}
-      
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <h1 className="text-3xl sm:text-4xl font-semibold text-white">Goal Tracker</h1>
-        <button
-  onClick={() => {
-    setShowForm(true);
-    setEditingId(null);
-    setForm({ title: "", description: "", category: "task", aim: "" });
-    setErrors({});
-  }}
-  className="bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded-md flex items-center gap-2 text-sm sm:text-base font-medium transition-all"
-  disabled={loading}
->
-  {loading ? (
-    "Loading..."
-  ) : (
-    <>
-      <FaPlus className="text-xs sm:text-sm" /> <span className="text-xs sm:text-sm">Add Goal</span>
-    </>
-  )}
-</button>
 
+      <div className="mb-6">
+        <div className="flex flex-col sm:flex-row justify-center sm:justify-between items-center gap-4 mb-4">
+          <h1 className="text-2xl font-bold text-center sm:text-left">Goal Tracker</h1>
+          
+          <button
+            onClick={() => setShowForm(true)}
+            className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-md flex items-center transition-colors"
+          >
+            <FaPlus className="mr-2" /> Add Goal
+          </button>
+        </div>
+
+        {/* Filters - centered on mobile */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-center sm:justify-start">
+          <div className="flex-1 sm:flex-initial max-w-xs mx-auto sm:mx-0">
+            <label className="block text-sm font-medium text-gray-400 mb-1">Goal Type</label>
+            <select
+              value={goalTypeFilter}
+              onChange={(e) => setGoalTypeFilter(e.target.value)}
+              className="w-full bg-[#2d3748] text-white p-2 rounded border border-gray-700 focus:border-teal-500 focus:outline-none"
+            >
+              <option value="all">All Types</option>
+              <option value="task">Task</option>
+              <option value="time">Time</option>
+              <option value="meditation">Meditation</option>
+            </select>
+          </div>
+
+          <div className="flex-1 sm:flex-initial max-w-xs mx-auto sm:mx-0">
+            <label className="block text-sm font-medium text-gray-400 mb-1">Status</label>
+            <select
+              value={goalStatusFilter}
+              onChange={(e) => setGoalStatusFilter(e.target.value)}
+              className="w-full bg-[#2d3748] text-white p-2 rounded border border-gray-700 focus:border-teal-500 focus:outline-none"
+            >
+              <option value="all">All Statuses</option>
+              <option value="not-started">Not Started</option>
+              <option value="in-progress">In Progress</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {showForm && (
@@ -340,8 +373,8 @@ export default function GoalTracker() {
                   form.category === "task"
                     ? "Number of tasks"
                     : form.category === "time"
-                    ? "Hours of work"
-                    : "Hours of meditation"
+                      ? "Hours of work"
+                      : "Hours of meditation"
                 }
                 defaultValue={form.aim}
                 onBlur={(e) => {
@@ -372,10 +405,38 @@ export default function GoalTracker() {
           <Bar data={barData} options={barOptions} height={200} />
         </div>
         <div className="w-full mx-auto" style={{ maxWidth: "300px", aspectRatio: "1 / 1" }}>
-  <Pie data={pieData} options={pieOptions} />
-</div>
+          <Pie data={pieData} options={pieOptions} />
+        </div>
+      </div>
 
-
+      {/* --- Filter Controls --- */}
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
+        <h2 className="text-xl sm:text-2xl font-semibold text-white">Goals</h2>
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <div>
+            <select
+              value={goalTypeFilter}
+              onChange={e => setGoalTypeFilter(e.target.value)}
+              className="bg-[#181818] text-white border border-white px-3 py-2 rounded focus:outline-none"
+            >
+              <option value="all">All Types</option>
+              <option value="task">Task</option>
+              <option value="time">Time</option>
+              <option value="meditation">Meditation</option>
+            </select>
+          </div>
+          <div>
+            <select
+              value={goalStatusFilter}
+              onChange={e => setGoalStatusFilter(e.target.value)}
+              className="bg-[#181818] text-white border border-white px-3 py-2 rounded focus:outline-none"
+            >
+              <option value="all">All Status</option>
+              <option value="completed">Completed</option>
+              <option value="active">Pending</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {loading && !showForm ? (
@@ -384,55 +445,74 @@ export default function GoalTracker() {
         </div>
       ) : (
         <div className="space-y-4">
-          {goals.length === 0 ? (
+          {filteredGoals.length === 0 ? (
             <div className="bg-[#1e1e1e] p-6 rounded-lg text-center">
               <p className="text-gray-400">No goals found. Create your first goal!</p>
             </div>
           ) : (
-            goals.map((goal) => (
-              <div key={goal._id} className="bg-[#1e1e1e] p-4 sm:p-6 rounded-lg space-y-3 relative">
+            filteredGoals.map((goal) => (
+              <div
+                key={goal._id}
+                className="bg-[#121212] p-4 sm:p-6 rounded-xl space-y-3 relative border border-gray-800 shadow-sm transition hover:shadow-md"
+              >
+                {/* Goal Type Badge */}
                 <div className="absolute top-3 sm:top-4 right-3 sm:right-4">
-                  <span className="bg-teal-700 text-xs px-2 py-1 rounded-full capitalize">
+                  <span className="bg-teal-600 text-white text-xs px-2 py-1 rounded-full capitalize shadow">
                     {goal.goalType || "task"}
                   </span>
                 </div>
 
+                {/* Title */}
                 <div className="flex justify-between items-center pr-16 sm:pr-20">
-                  <h3 className={`text-lg sm:text-xl font-bold ${goal.status === 'completed' ? "line-through text-gray-500" : ""}`}>
+                  <h3
+                    className={`text-lg sm:text-xl font-bold ${goal.status === "completed" ? "line-through text-gray-500" : "text-white"
+                      }`}
+                  >
                     {goal.title}
                   </h3>
                 </div>
 
+                {/* Description */}
                 <p className="text-xs sm:text-sm text-gray-400">{goal.description}</p>
+
+                {/* Date */}
                 <p className="text-xs text-gray-500">
-                  {goal.status === 'completed' ? "Completed on" : "Created on"} {new Date(goal.createdAt).toLocaleDateString()}
+                  {goal.status === "completed" ? "Completed on" : "Created on"}{" "}
+                  {new Date(goal.createdAt).toLocaleDateString()}
                 </p>
 
-                <span className="bg-gray-700 text-xs px-2 py-1 rounded-full inline-block mb-3">
-                  Target: {formatTargetValue(goal)}
+                {/* Target */}
+                <span className="bg-gray-800 text-xs text-white px-2 py-1 rounded-full inline-block">
+                  🎯 Target: {formatTargetValue(goal)}
                 </span>
 
-                <div className="h-2 rounded bg-gray-700">
+                {/* Progress Bar */}
+                <div className="h-2 rounded bg-gray-700 overflow-hidden">
                   <div
-                    className={`h-full ${goal.status === 'completed' ? "bg-green-500" : "bg-teal-500"} rounded`}
+                    className={`h-full ${goal.status === "completed" ? "bg-green-500" : "bg-teal-500"
+                      }`}
                     style={{ width: `${(goal.progressValue / goal.targetValue) * 100}%` }}
                   />
                 </div>
+
+                {/* Progress Text */}
                 <div className="text-xs sm:text-sm text-right text-gray-400">
-                  {formatProgressValue(goal)} / {formatTargetValue(goal)} ({Math.round((goal.progressValue / goal.targetValue) * 100) || 0}%)
+                  {formatProgressValue(goal)} / {formatTargetValue(goal)} (
+                  {Math.round((goal.progressValue / goal.targetValue) * 100) || 0}%)
                 </div>
 
                 <hr className="border-gray-700 my-3" />
 
+                {/* Action Buttons */}
                 <div className="flex justify-end gap-3 sm:gap-4 text-xs sm:text-sm">
-                  <button 
-                    className="flex items-center gap-1 text-gray-300 hover:text-white py-1 px-2 rounded hover:bg-gray-800" 
+                  <button
+                    className="flex items-center gap-1 text-gray-300 hover:text-white py-1 px-2 rounded hover:bg-gray-800"
                     onClick={() => editGoal(goal)}
                   >
                     <FaEdit /> Edit
                   </button>
-                  <button 
-                    className="flex items-center gap-1 text-red-400 hover:text-red-600 py-1 px-2 rounded hover:bg-gray-800" 
+                  <button
+                    className="flex items-center gap-1 text-red-400 hover:text-red-600 py-1 px-2 rounded hover:bg-gray-800"
                     onClick={() => deleteGoal(goal._id)}
                   >
                     <FaTrash /> Delete

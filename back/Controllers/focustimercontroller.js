@@ -134,9 +134,12 @@ function getFormattedDateTime() {
 // Update focus timer by user ID and today's date
 exports.updateFocusTimer = async (req, res) => {
   try {
+    // console.log("Focustimer")
     const db = await connectToDB();
 
     const updateData = { ...req.body };
+
+    console.log("Updating the focus timer with :",req.body.workDuration);
 
     const result = await db.collection("focustimer").findOneAndUpdate(
       {

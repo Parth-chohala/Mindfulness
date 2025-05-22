@@ -11,25 +11,6 @@ const logDebug = (message, data) => {
   // console.log(`[Home] ${message}`, data || '');
 };
 
-// Enhanced filterLogsByDate with better validation
-const filterLogsByDate = (logs, daysToKeep = 1) => {
-  if (!Array.isArray(logs)) return [];
-
-  const cutoffDate = new Date();
-  cutoffDate.setHours(0, 0, 0, 0);
-  cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-  return logs.filter(log => {
-    if (!log || !log.start) return false;
-
-    try {
-      const logDate = new Date(log.start);
-      return !isNaN(logDate.getTime()) && logDate >= cutoffDate;
-    } catch (e) {
-      return false;
-    }
-  });
-};
 
 // Enhanced sticky note component with Tailwind CSS
 const StickyNote = ({ note, onUpdate, onDelete, onColorChange, isAuthenticated, onAuthRequired }) => {
@@ -131,7 +112,10 @@ export default function Home() {
   const [workDuration, setWorkDuration] = useState(timerService.workDurationSetting || 0); // Default work duration (in minutes)
   const [breakDuration, setBreakDuration] = useState(timerService.breakDurationSetting || 0); // Default break duration (in minutes)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Dialog box visibility
-  const [logs, setLogs] = useState([]);
+  const [logs, setLogs] = useState(() => {
+    const log = localStorage.getItem('activityLogs_' + timerService.userId);
+    return log ? JSON.parse(log) : [];
+  });
 
   const [stickyNotes, setStickyNotes] = useState([]); // State for sticky notes
   const [notifiedForWork, setNotifiedForWork] = useState(false); // Track if we've notified for current work session
@@ -142,10 +126,15 @@ export default function Home() {
     const savedNotes = localStorage.getItem('notes');
     return savedNotes ? JSON.parse(savedNotes) : [];
   });
-  const [workdurationofuser, setWorkdurationofuser] = useState(timerService.getTotalWorkDuration());
-  const [breakdurationofuser, setbreakurationofuser] = useState(timerService.getTotalBreakDuration());
+  const [workdurationofuser, setWorkdurationofuser] = useState(() => {
+    return timerService.workDuration || 0; // Use the property directly as fallback
+  });
+  const [breakdurationofuser, setbreakurationofuser] = useState(() => {
+    return timerService.breakDuration || 0; // Use the property directly as fallback
+  });
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
+  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
 
   // Add state for save status
   const [saveStatus, setSaveStatus] = useState({ saving: false, lastSaved: null });
@@ -153,6 +142,11 @@ export default function Home() {
   // Add state for auto-save interval
 
   const logsRef = useRef(null); // Ref to the logs container to scroll automatically
+
+  // useEffect(() => {
+  //   setLogs(timerService.allLogs);
+  //   console.log("Use effect called ")
+  // }, [timerService.workLogs, timerService.breakLogs, timerService.allLogs])
 
   // Subscribe to timer service updates with better error handling
   useEffect(() => {
@@ -232,6 +226,10 @@ export default function Home() {
         }
         return prevState;
       });
+
+      // Update work and break durations
+      setWorkdurationofuser(timerService.workDuration || 0);
+      setbreakurationofuser(timerService.breakDuration || 0);
 
       // Reload logs when timer state changes
       loadLogs();
@@ -355,14 +353,6 @@ export default function Home() {
     });
   };
 
-  // Debug the timer display issue
-  useEffect(() => {
-    //('Current timer state:', timerState);
-    // Check what properties are available in timerState
-    //('Available properties:', Object.keys(timerState));
-    // Check the seconds value specifically
-    //('Seconds value:', timerState.seconds);
-  }, [timerState]);
 
   // Format time for display
   const formatTime = (seconds) => {
@@ -379,31 +369,185 @@ export default function Home() {
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Helper function to calculate duration between two timestamps
-  const calculateDuration = (startTime, endTime) => {
+  // Helper function to format date for display
+  const formatDateForDisplay = (dateString) => {
     try {
-      const start = new Date(startTime);
-      const end = new Date(endTime);
-
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        return "Invalid duration";
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        console.error("Invalid date string:", dateString);
+        return "Invalid date";
       }
-
-      const durationInMs = end - start;
-      const durationInSeconds = Math.floor(durationInMs / 1000);
-      const durationInMinutes = Math.floor(durationInSeconds / 60);
-      const durationInHours = Math.floor(durationInMinutes / 60);
-
-      if (durationInHours >= 1) {
-        const minutesRemaining = Math.floor((durationInMs % 3600000) / 60000);
-        return `${durationInHours} hr ${minutesRemaining} minutes`;
-      } else if (durationInMinutes >= 1) {
-        return `${durationInMinutes} minutes`;
-      } else {
-        return `${durationInSeconds} seconds`;
-      }
+      return date.toISOString().replace('T', ' ').substring(0, 19);
     } catch (error) {
-      return "Error calculating duration";
+      console.error("Error formatting date:", error);
+      return "Error";
+    }
+  };
+
+  // Helper function to calculate duration string
+  const calculateDuration = (start, end) => {
+    try {
+      // If we received Date objects, use them directly
+      const startDate = start instanceof Date ? start : new Date(start);
+      const endDate = end instanceof Date ? end : new Date(end);
+
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error("Invalid date in duration calculation:", { start, end });
+        return "0 seconds";
+      }
+
+      const durationMs = endDate - startDate;
+      if (durationMs < 0) {
+        console.error("Negative duration calculated:", { start, end, durationMs });
+        return "0 seconds";
+      }
+
+      const seconds = Math.floor(durationMs / 1000);
+
+      if (seconds < 60) {
+        return `${seconds} seconds`;
+      }
+
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = seconds % 60;
+
+      if (minutes < 60) {
+        if (remainingSeconds === 0) {
+          return `${minutes} minutes`;
+        }
+        return `${minutes} minutes ${remainingSeconds} seconds`;
+      }
+
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+
+      if (remainingMinutes === 0) {
+        return `${hours} hours`;
+      }
+      return `${hours} hours ${remainingMinutes} minutes`;
+    } catch (error) {
+      console.error("Error calculating duration:", error);
+      return "0 seconds";
+    }
+  };
+
+  // Helper function to find any open log (session or break)
+  const findOpenLog = (logs) => {
+    if (!Array.isArray(logs)) return null;
+    // Look specifically for logs that have a start time but no end time
+    return logs.find(log => log && log.start && !log.end);
+  };
+
+  // Helper function to close an open log with proper duration calculation
+  const closeOpenLog = (logs) => {
+    if (!Array.isArray(logs)) return logs;
+
+    const updatedLogs = [...logs];
+    const openLogIndex = updatedLogs.findIndex(log => log && log.start && !log.end);
+
+    if (openLogIndex !== -1) {
+      const openLog = updatedLogs[openLogIndex];
+      const endTime = getFormattedCurrentTime();
+
+      try {
+        const startDate = new Date(openLog.start);
+        const endDate = new Date(endTime);
+
+        if (isNaN(startDate.getTime())) {
+          console.error("Invalid start date in log:", openLog);
+          // Fix the start date if it's invalid
+          openLog.start = endTime;
+        }
+
+        // Calculate duration in seconds
+        const durationSeconds = Math.max(0, Math.floor((endDate - startDate) / 1000));
+
+        // Update the log with end time and duration
+        updatedLogs[openLogIndex] = {
+          ...openLog,
+          end: endTime,
+          duration: calculateDuration(startDate, endDate),
+          durationSeconds: durationSeconds
+        };
+
+        console.log(`Closed ${openLog.type} log:`, {
+          start: formatDateForDisplay(openLog.start),
+          end: formatDateForDisplay(endTime),
+          duration: calculateDuration(startDate, endDate),
+          durationSeconds: durationSeconds
+        });
+        saveLogsToLocalStorage(updatedLogs);
+        setLogs(updatedLogs);
+        // Save updated logs to localStorage
+      } catch (error) {
+        console.error("Error closing log:", error);
+        // Still update the end time even if calculation fails
+        updatedLogs[openLogIndex] = {
+          ...openLog,
+          end: endTime,
+          duration: "Error",
+          durationSeconds: 0
+        };
+
+        // Save updated logs to localStorage even if there was an error
+        saveLogsToLocalStorage(updatedLogs);
+      }
+    } else {
+      console.log("No open log found to close");
+    }
+
+  };
+
+  // Save logs to localStorage
+  const saveLogsToLocalStorage = (logsToSave) => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        console.log("No user ID, skipping logs save to localStorage");
+        return;
+      }
+
+      // Save logs with user-specific key
+      const userLogsKey = `activityLogs_${userId}`;
+      localStorage.setItem(userLogsKey, JSON.stringify(logsToSave));
+
+      // Also save to generic key for backward compatibility
+      localStorage.setItem("activityLogs", JSON.stringify(logsToSave));
+
+      // console.log(`Saved ${logsToSave.length} logs to localStorage for user ${userId}`);
+    } catch (error) {
+      console.error("Error saving logs to localStorage:", error);
+    }
+  };
+
+  // Load logs from localStorage
+  const loadLogsFromLocalStorage = () => {
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        console.log("No user ID, skipping logs load from localStorage");
+        return [];
+      }
+
+      // Try to load from user-specific key first
+      const userLogsKey = `activityLogs_${userId}`;
+      let savedLogs = localStorage.getItem(userLogsKey);
+
+      // If not found, try the generic key as fallback
+      if (!savedLogs) {
+        savedLogs = localStorage.getItem("activityLogs");
+      }
+
+      if (savedLogs) {
+        const parsedLogs = JSON.parse(savedLogs);
+        console.log(`Loaded ${parsedLogs.length} logs from localStorage for user ${userId}`);
+        return Array.isArray(parsedLogs) ? parsedLogs : [];
+      }
+
+      return [];
+    } catch (error) {
+      console.error("Error loading logs from localStorage:", error);
+      return [];
     }
   };
 
@@ -412,42 +556,6 @@ export default function Home() {
     return new Date().toISOString();
   };
 
-  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-
-  // Start timer function
-  const handleStartTimer = () => {
-    if (!isAuthenticated) {
-      setShowAuthDialog(true);
-      return;
-    }
-
-    try {
-      // If we're on a break, stop it first
-      if (timerState.isRunning && timerState.isOnBreak) {
-        timerService.stopBreak();
-        return;
-      }
-
-      // If we're already running a work session, pause it first
-      if (timerState.isRunning && !timerState.isOnBreak) {
-        timerService.pauseTimer();
-        return;
-      }
-
-      // Start a new timer
-      timerService.startTimer();
-      logDebug("Timer started");
-
-      // Add new work session log
-      setLogs((prevLogs) => [
-        { type: 'session', start: getFormattedCurrentTime(), end: null, duration: null, durationSeconds: null },
-        ...prevLogs, // New logs come at the top
-      ]);
-    } catch (error) {
-      console.error("Error starting timer:", error);
-      showErrorToast("Failed to start timer. Please try again.");
-    }
-  };
   const handlePauseTimer = () => {
     if (!isAuthenticated) {
       setShowAuthDialog(true);
@@ -455,75 +563,71 @@ export default function Home() {
     }
 
     try {
-      timerService.pauseTimer();
-      logDebug("Timer paused");
 
-      // Update logs to reflect the paused timer
-      setLogs((prevLogs) => {
-        const updatedLogs = [...prevLogs];
+      // First check if timer is actually running
+      if (!timerState.isRunning) {
+        console.log("Timer not running, nothing to pause");
+        return;
+      }
 
-        // Find the last session or break without an end time
-        const lastLog = updatedLogs.find((log) => !log.end);
+      // Pause the timer in the service FIRST
+      closeLog();
 
-        if (lastLog) {
-          const endTime = getFormattedCurrentTime();
-          const startDate = new Date(lastLog.start);
-          const endDate = new Date(endTime);
-          const durationSeconds = Math.floor((endDate - startDate) / 1000);
 
-          lastLog.end = endTime;
-          lastLog.duration = calculateDuration(lastLog.start, endTime);
-          lastLog.durationSeconds = durationSeconds;
-        }
+      console.log("Updated logs after pausing timer:", logs);
 
-        return updatedLogs;
-      });
+      // Then update logs to close any open log with proper duration
     } catch (error) {
       console.error("Error pausing timer:", error);
       showErrorToast("Failed to pause timer. Please try again.");
     }
+    timerService.pauseTimer();
+
+    console.log("Paused timer --------", logs);
   };
 
+  // Start timer function
+  const handleStartTimer = () => {
+    if (!isAuthenticated) {
+      setShowAuthDialog(true);
+      return;
+    }
+    if (timerState.isOnBreak) {
+      console.log("Currently on break, ending break first");
+      handleEndBreak();
+      return;
+    }
+    closeLog();
+    addnewLog('session');
+    timerService.startTimer();
+
+    console.log("Started timer --------", logs);
+    // No open log, start timer directly
+  };
   const handleEndBreak = () => {
     if (!isAuthenticated) {
       setShowAuthDialog(true);
       return;
     }
 
-    try {
-      timerService.stopBreak();
+    closeLog();
+    // closeLog();
+    addnewLog('session');
 
-      // Log end of break
-      setLogs((prevLogs) => {
-        const updatedLogs = [...prevLogs];
-        const lastBreak = updatedLogs.find((log) => log.type === 'break' && log.start && !log.end);
 
-        if (lastBreak) {
-          const endTime = getFormattedCurrentTime();
-          const startDate = new Date(lastBreak.start);
-          const endDate = new Date(endTime);
-          const durationSeconds = Math.floor((endDate - startDate) / 1000);
+    // closeOpenLog(logs);
 
-          lastBreak.end = endTime;
-          lastBreak.duration = calculateDuration(lastBreak.start, endTime);
-          lastBreak.durationSeconds = durationSeconds;
-        }
+    console.log("Before : ", logs)
+    setNotifiedForWork(false);
 
-        return updatedLogs;
-      });
+    // First, close any open log (should be a break)
 
-      // Reset notification flag for new work session
-      setNotifiedForWork(false);
 
-      // Add new work session log
-      setLogs((prevLogs) => [
-        { type: 'session', start: getFormattedCurrentTime(), end: null, duration: null, durationSeconds: null },
-        ...prevLogs, // New logs come at the top
-      ]);
-    } catch (error) {
-      console.error("Error ending break:", error);
-      showErrorToast("Failed to end break. Please try again.");
-    }
+
+    console.log("After : ", logs)
+    timerService.stopBreak();
+    console.log("ended  break --------", logs);
+
   };
 
   // Start break function
@@ -533,78 +637,103 @@ export default function Home() {
       return;
     }
 
-    try {
-      // First, end the current work session if running
-      if (timerState.isRunning && !timerState.isOnBreak) {
-        // Log end of work session
-        setLogs((prevLogs) => {
-          const updatedLogs = [...prevLogs];
-          const lastSession = updatedLogs.find((log) => log.type === 'session' && log.start && !log.end);
-
-          if (lastSession) {
-            const endTime = getFormattedCurrentTime();
-            const startDate = new Date(lastSession.start);
-            const endDate = new Date(endTime);
-            const durationSeconds = Math.floor((endDate - startDate) / 1000);
-
-            lastSession.end = endTime;
-            lastSession.duration = calculateDuration(lastSession.start, endTime);
-            lastSession.durationSeconds = durationSeconds;
-          }
-
-          return updatedLogs;
-        });
-      }
-
-      // Then start the break
-      timerService.startBreak();
-      setNotifiedForBreak(false);
-      logDebug("Break started");
-
-      // Add new break log
-      setLogs((prevLogs) => [
-        { type: 'break', start: getFormattedCurrentTime(), end: null, duration: null, durationSeconds: null },
-        ...prevLogs, // New logs come at the top
-      ]);
-    } catch (error) {
-      console.error("Error starting break:", error);
-      showErrorToast("Failed to start break. Please try again.");
-    }
-
-
-    // Handle break function (called when break button is clicked)
-    // const handleBreak = () => {
-    //   if (!isAuthenticated) {
-    //     setShowAuthDialog(true);
-    //     return;
-    //   }
-    // First, end the current work session if running
-    if (timerState.isRunning && !timerState.isOnBreak) {
-      // Log end of work session
-      setLogs((prevLogs) => {
-        const updatedLogs = [...prevLogs];
-        const lastSession = updatedLogs.find((log) => log.type === 'session' && log.start && !log.end);
-
-        if (lastSession) {
-          const endTime = getFormattedCurrentTime();
-          const startDate = new Date(lastSession.start);
-          const endDate = new Date(endTime);
-          const durationSeconds = Math.floor((endDate - startDate) / 1000);
-
-          lastSession.end = endTime; // Set the end time for the last session
-          lastSession.duration = calculateDuration(lastSession.start, endTime); // Calculate the human-readable duration
-          lastSession.durationSeconds = durationSeconds; // Store the raw duration in seconds
-
-          //("Work session ended in Home component with duration:", lastSession.duration);
-        }
-
-        return updatedLogs;
-      });
-    }
-
-    // Then start the break
-    // Then start the break
+    // closeOpenLog(logs);
+    setNotifiedForBreak(false);
+    closeLog();
+    addnewLog('break');
     timerService.startBreak();
+    console.log("Break started --------", logs);
+
+  };
+  const addnewLog = (type) => {
+    const startTime = getFormattedCurrentTime();
+    const newLog = {
+      type: type,
+      start: startTime,
+      end: null,
+      duration: null,
+      durationSeconds: null
+    };
+
+    const newLogs = [newLog, ...logs];
+    setLogs(newLogs)
+    saveLogsToLocalStorage(newLogs);
+  }
+  const closeLog = async () => {
+    const endTime = new Date().toISOString();
+
+    // Find the first open log (session or break)
+    const openLogIndex = logs.findIndex((log) => log && log.end === null);
+    if (openLogIndex === -1) return;
+
+    const openLog = logs[openLogIndex];
+    const start = new Date(openLog.start);
+    const end = new Date(endTime);
+    const durationSeconds = await timerService.calculateDuration(start, end);
+
+    const hours = Math.floor(durationSeconds / 3600);
+    const minutes = Math.floor((durationSeconds % 3600) / 60);
+    const seconds = durationSeconds % 60;
+
+    let duration = '';
+    if (hours > 0) {
+      duration = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    } else if (minutes > 0) {
+      duration = `${minutes}`;
+    } else {
+      duration = `${seconds}`;
+    }
+
+    // Update local logs
+    const updatedLog = {
+      ...openLog,
+      end: endTime,
+      duration,
+      durationSeconds,
+    };
+    const updatedLogs = [...logs];
+    updatedLogs[openLogIndex] = updatedLog;
+
+    setLogs(updatedLogs);
+    saveLogsToLocalStorage(updatedLogs);
+
+    // --- Update timerService logs as well ---
+    let serviceLogs = openLog.type === 'break'
+      ? timerService.breakLogs
+      : timerService.workLogs;
+
+    if (Array.isArray(serviceLogs)) {
+      const serviceOpenLogIndex = serviceLogs.findIndex(
+        (log) => log && log.start === openLog.start && !log.end
+      );
+      if (serviceOpenLogIndex !== -1) {
+        serviceLogs[serviceOpenLogIndex] = {
+          ...serviceLogs[serviceOpenLogIndex],
+          end: endTime,
+          duration,
+          durationSeconds,
+        };
+      }
+    }
+
+    // Also update the combined logs array if it exists
+    if (Array.isArray(timerService.logs)) {
+      const combinedOpenLogIndex = timerService.logs.findIndex(
+        (log) => log && log.start === openLog.start && !log.end
+      );
+      if (combinedOpenLogIndex !== -1) {
+        timerService.logs[combinedOpenLogIndex] = {
+          ...timerService.logs[combinedOpenLogIndex],
+          end: endTime,
+          duration,
+          durationSeconds,
+        };
+      }
+    }
+
+    // Save state and update DB
+    timerService.saveState();
+    await timerService.updateInDB();
   };
 
   // Add state for error handling
@@ -698,8 +827,6 @@ export default function Home() {
 
   // Function to send notification with improved error handling
   const sendNotification = (title, body) => {
-    //("Attempting to send notification:", title, body);
-
     try {
       // Check if the browser supports notifications
       if (!("Notification" in window)) {
@@ -713,30 +840,37 @@ export default function Home() {
         requestNotificationPermission(); // Try requesting permission again
         return;
       }
-
-      // Create and show notification
-      const notification = new Notification(title, {
-        body: body,
-        icon: '/favicon.ico',
-        requireInteraction: true // Keep notification visible until user interacts with it
-      });
-
-      // Also show a toast notification with matching style
-      if (title.includes('Break')) {
-        showInfoToast(title + ': ' + body);
-      } else {
-        showSuccessToast(title + ': ' + body);
+      let notification;
+      if (title == 'Notifications Enabled') {
+         notification = new Notification(title, {
+          body: body,
+          icon: '/logo.png',
+        });
       }
+      if(title=='Break is over!'){
+          notification = new Notification(title, {
+          body: body,
+          icon: '/work.png',
+        });
+      }
+      if(title=='Time for a break!'){
+          notification = new Notification(title, {
+          body: body,
+          icon: '/break.png',
+        });
+      }
+      // Create and show notification
+
 
       // Log when notification is shown
-      // notification.onshow = () => //("Notification shown:", title);
+      notification.onshow = () => console.log("Notification shown:", title);
 
       // Log any errors
       notification.onerror = (err) => console.error("Notification error:", err);
 
       // Handle notification click
       notification.onclick = () => {
-        //("Notification clicked:", title);
+        console.log("Notification clicked:", title);
         window.focus(); // Focus the window when notification is clicked
         notification.close();
       };
@@ -744,8 +878,6 @@ export default function Home() {
       return notification;
     } catch (error) {
       console.error("Error sending notification:", error);
-      // Fallback to toast notification
-      showInfoToast(title + ': ' + body);
     }
   };
 
@@ -771,7 +903,7 @@ export default function Home() {
           `You've been working for ${workDuration} minutes. Take a break.`
         );
         setNotifiedForWork(true); // Set flag to prevent repeated notifications
-        //(`Work notification sent after ${elapsedSeconds} seconds`);
+        console.log(`Work notification sent after ${elapsedSeconds} seconds`);
       }
     }
 
@@ -788,7 +920,7 @@ export default function Home() {
           `Your ${breakDuration} minute break is done. Time to get back to work.`
         );
         setNotifiedForBreak(true); // Set flag to prevent repeated notifications
-        //(`Break notification sent after ${breakElapsed} seconds`);
+        console.log(`Break notification sent after ${breakElapsed} seconds`);
       }
     }
   }, [timerState, workDuration, breakDuration, notificationPermission, notifiedForWork, notifiedForBreak]);
@@ -840,82 +972,6 @@ export default function Home() {
     setTempBreakDuration(timerService.breakDurationSetting || 5);
     setShowSettings(true);
   };
-
-  const handleAddNote = () => {
-    const newNotes = [...notes, { text: '' }];
-    setNotes(newNotes);
-    localStorage.setItem('notes', JSON.stringify(newNotes));
-  };
-
-  const handleNoteChange = (index, text) => {
-    const newNotes = [...notes];
-    newNotes[index].text = text;
-    setNotes(newNotes);
-    localStorage.setItem('notes', JSON.stringify(newNotes));
-  };
-
-  const handleDeleteNote = (index) => {
-    const newNotes = notes.filter((_, i) => i !== index);
-    setNotes(newNotes);
-    localStorage.setItem('notes', JSON.stringify(newNotes));
-  };
-
-  // Add function to handle manual save
-  const handleManualSave = async () => {
-    try {
-      setSaveStatus({ saving: true, lastSaved: saveStatus.lastSaved });
-
-      // Force timer service to save all data
-      const success = await timerService.saveTimerData();
-
-      if (success) {
-        setSaveStatus({ saving: false, lastSaved: new Date() });
-        showSuccessToast("Timer data saved successfully!");
-      } else {
-        setSaveStatus({ saving: false, lastSaved: saveStatus.lastSaved });
-        showErrorToast("Failed to save timer data. Please try again.");
-      }
-    } catch (error) {
-      console.error("Error saving timer data:", error);
-      setSaveStatus({ saving: false, lastSaved: saveStatus.lastSaved });
-      showErrorToast("An error occurred while saving timer data.");
-    }
-  };
-
-  // Add save status indicator to the timer UI
-  const saveStatusIndicator = () => {
-    if (saveStatus.saving) {
-      return (
-        <div className="text-xs text-gray-400 mt-2 flex items-center justify-center">
-          <span className="flex items-center">
-            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-teal-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 1 1 0 16 8 8 0 0 1 0-16z"></path>
-            </svg>
-            Saving...
-          </span>
-        </div>
-      );
-    } else if (saveStatus.lastSaved) {
-      return (
-        <div className="text-xs text-gray-400 mt-2">
-          Last saved: {saveStatus.lastSaved.toLocaleString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true,
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-          })}
-        </div>
-      );
-    } else {
-      return null;
-    }
-  };
-
-  // Add a useEffect to update the timer display every second
   useEffect(() => {
     // Only create an interval if we don't have one from the timer service
     if (timerState.isRunning) {
@@ -939,12 +995,12 @@ export default function Home() {
       if (timerState.isRunning) {
         // Get the current state from the timer service
         const currentState = timerService.getState();
-        
+
         // Check if the seconds have changed
         if (currentState.seconds !== timerState.seconds) {
           setTimerState(currentState);
         }
-        
+
         // Check if timer service is still running
         if (currentState.isRunning && !timerService.intervalId) {
           if (currentState.isOnBreak) {
@@ -970,10 +1026,10 @@ export default function Home() {
         setTimerState(currentState);
       }
     };
-    
+
     // Add visibility change listener
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    
+
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -993,25 +1049,108 @@ export default function Home() {
 
   // Fix the log display in Home component
   const renderLogs = () => {
-    if (!logs || logs.length === 0) {
-      return <p>No activity logs yet.</p>;
+    if (!Array.isArray(logs) || logs.length === 0) {
+      return <div className="text-gray-400">No activity logs yet.</div>;
     }
 
     return logs.map((log, index) => {
-      // Ensure log has a valid type
-      const logType = log.type === 'break' ? 'Break' : 'Session';
+      try {
+        // Format start time
+        let startFormatted = "---";
+        try {
+          if (log.start) {
+            const startDate = new Date(log.start);
+            if (!isNaN(startDate.getTime())) {
+              startFormatted = formatDateForDisplay(log.start);
+            }
+          }
+        } catch (e) {
+          console.error("Error formatting start time:", e);
+        }
 
-      // Format the log entry
-      return (
-        <div key={index} className="log-entry">
-          <span className={log.type === 'break' ? 'break-log' : 'session-log'}>
-            {logType}
-          </span>{' '}
-          started at {log.start} ended at {log.end || '---'} - Duration:{' '}
-          {log.duration || '---'}
-        </div>
-      );
+        // Format end time
+        let endFormatted = "---";
+        try {
+          if (log.end) {
+            const endDate = new Date(log.end);
+            if (!isNaN(endDate.getTime())) {
+              endFormatted = formatDateForDisplay(log.end);
+            }
+          }
+        } catch (e) {
+          console.error("Error formatting end time:", e);
+        }
+
+        // Format duration
+        let durationFormatted = "---";
+        try {
+          if (log.start && log.end) {
+            const startDate = new Date(log.start);
+            const endDate = new Date(log.end);
+            if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+              durationFormatted = calculateDuration(startDate, endDate);
+            }
+          } else if (log.duration) {
+            durationFormatted = log.duration;
+          } else if (log.durationSeconds) {
+            durationFormatted = `${log.durationSeconds} seconds`;
+          }
+        } catch (e) {
+          console.error("Error formatting duration:", e);
+        }
+
+        const logTypeColor = log.type === 'session' ? 'text-teal-400' : 'text-blue-400';
+        const isOpen = log.start && !log.end;
+        const statusIndicator = isOpen ? '🟢 ' : '';
+
+        return (
+          <div key={index} className={`border-b border-gray-700 py-2 ${isOpen ? 'bg-gray-800' : ''}`}>
+            {statusIndicator}
+            <span className={logTypeColor}>
+              {log.type === 'session' ? 'Session' : 'Break'}
+            </span>
+            {' started at '}
+            {startFormatted}
+            {' ended at '}
+            {endFormatted}
+            {' - Duration: '}
+            {durationFormatted}
+          </div>
+        );
+      } catch (error) {
+        console.error("Error rendering log:", error, log);
+        return (
+          <div key={index} className="border-b border-gray-700 py-2 text-red-400">
+            Error displaying log entry
+          </div>
+        );
+      }
     });
+  };
+
+  // Add these helper functions for time formatting
+  const formatTimeDisplay = (seconds) => {
+    if (seconds === undefined || seconds === null || isNaN(seconds)) {
+      return "00:00:00";
+    }
+
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatDurationHuman = (seconds) => {
+    if (seconds < 60) return `${seconds}s`;
+
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+
+    if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    }
+    return `${mins}m`;
   };
 
   return (
@@ -1024,11 +1163,6 @@ export default function Home() {
             <div className={`text-5xl font-mono font-bold mb-4 ${timerState.isOnBreak ? 'text-red-500 animate-pulse' : 'text-teal-400'}`}>
               {formatTime(timerState.seconds)}
             </div>
-            {/* <div className="text-sm text-gray-400 mb-2">
-              {timerState.isRunning ? 
-                (timerState.isOnBreak ? 'Break in progress' : 'Session in progress') : 
-                'Timer paused'}
-            </div> */}
 
             {/* Status indicator */}
             <div className="mb-4">
@@ -1050,17 +1184,41 @@ export default function Home() {
               )}
             </div>
 
-            {/* Duration stats */}
-            <div className="flex justify-between items-center mb-4 p-2 bg-[#16213e] rounded-lg">
-              <div className="text-center">
-                <span className="text-xs text-gray-400 block">Work</span>
-                <span className="text-sm font-medium text-green-400">{workdurationofuser}</span>
-              </div>
-              <div className="text-center">
-                <span className="text-xs text-gray-400 block">Break</span>
-                <span className="text-sm font-medium text-blue-400">{breakdurationofuser}</span>
+            {/* Simplified Duration Stats */}
+            <div className="mb-6 p-3 bg-[#16213e] rounded-lg">
+              <div className="grid grid-cols-2 gap-4">
+                {/* Work Duration */}
+                <div>
+                  <div className="text-xs text-gray-400 mb-1">Work Time</div>
+                  <div className="text-lg font-medium text-green-400">
+                    {formatDurationHuman(workdurationofuser)}
+                  </div>
+                </div>
+
+                {/* Break Duration */}
+                <div>
+                  <div className="text-xs text-gray-400 mb-1">Break Time</div>
+                  <div className="text-lg font-medium text-blue-400">
+                    {formatDurationHuman(breakdurationofuser)}
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* Session Details - Simplified without elapsed time */}
+            {timerState.isRunning && (
+              <div className="mb-4 text-sm">
+                <div className="flex justify-between text-gray-400">
+                  <div>Started:</div>
+                  <div>
+                    {timerState.isOnBreak
+                      ? new Date(timerState.breakStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      : new Date(timerState.sessionStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    }
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Buttons */}
             <div className="flex flex-col gap-3">
@@ -1148,7 +1306,7 @@ export default function Home() {
       </div>
 
       {/* Logs Section with black background */}
-      <div className="w-full max-w-4xl mx-auto px-4 mb-8" ref={logsRef}>
+      <div className="w-full max-w-4xl mx-auto px-4 mb-8" ref={logsRef} >
         <h3 className="text-xl font-semibold mb-4">Activity Logs:</h3>
         <div className="bg-black rounded-lg p-4 max-h-60 overflow-y-auto">
           <ul className="space-y-2">
