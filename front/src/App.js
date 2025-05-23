@@ -14,38 +14,13 @@ import DailyPlanner from './componants/DailyPlanner';
 import Meditation from './componants/Meditation';
 import Goaltraker from './componants/Goaltraker';
 import Profile from './componants/Profile';
-
-// Create a simple ProtectedRoute component if it doesn't exist
-const ProtectedRoute = ({ children }) => {
-  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-
-  if (!isAuthenticated) {
-    // If not authenticated, show a message or redirect
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[#121212] text-white p-4">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-4">Authentication Required</h2>
-          <p className="mb-4">Please login to access this page.</p>
-          <button
-            onClick={() => window.location.href = '/'}
-            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-teal-600"
-          >
-            Go to Home
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // If authenticated, render the children
-  return children;
-};
+import Support from './componants/Support';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
     <Router>
-
-      <div className="App min-h-screen bg-[#121212] text-white">
+      <div className="App min-h-screen bg-light-bg dark:bg-dark-bg text-black dark:text-white transition-colors duration-300">
         <TitleUpdater />
         <Navbar />
         <ToastContainer {...toastContainerConfig} />
@@ -72,6 +47,7 @@ function App() {
                 <Profile />
               </ProtectedRoute>
             } />
+            <Route path="/support" element={<Support />} />
           </Routes>
         </div>
       </div>
@@ -80,6 +56,8 @@ function App() {
 }
 
 export default App;
+
+
 
 
 
