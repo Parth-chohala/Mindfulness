@@ -4,7 +4,6 @@ const dotenv = require('dotenv');
 const connectToDB = require('./db');
 const focusTimerRoutes = require('./routes/focustimerRoutes');
 const breaksRoutes = require('./routes/breaksRouter');
-const productivityStatusRoutes = require('./routes/productivitystatusRoutes');
 const meditationSessionRoutes = require('./routes/meditationsessionRoutes');
 const userMeditationProgressRoutes = require('./routes/usermeditationprogressRoutes');
 const achievements = require('./routes/achievementsRoutes');
@@ -28,7 +27,6 @@ app.use('/api', user);
 app.use('/api/task', task);
 app.use('/api', focusTimerRoutes);
 app.use('/api', breaksRoutes);
-app.use('/api', productivityStatusRoutes);
 app.use('/api', meditationSessionRoutes);  // This should register the meditation routes
 app.use('/api', userMeditationProgressRoutes);
 app.use('/api', achievements);
@@ -42,7 +40,7 @@ async function startServer() {
   try {
     // Initialize database connection
     await connectToDB();
-    
+
     // Start the server
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);

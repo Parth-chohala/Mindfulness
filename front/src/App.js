@@ -1,7 +1,6 @@
 // Root Component Structure for Mindfulness App
 // Note: Uses TailwindCSS for styling and react-router-dom for routing
 
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -19,7 +18,7 @@ import Profile from './componants/Profile';
 // Create a simple ProtectedRoute component if it doesn't exist
 const ProtectedRoute = ({ children }) => {
   const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-  
+
   if (!isAuthenticated) {
     // If not authenticated, show a message or redirect
     return (
@@ -27,7 +26,7 @@ const ProtectedRoute = ({ children }) => {
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">Authentication Required</h2>
           <p className="mb-4">Please login to access this page.</p>
-          <button 
+          <button
             onClick={() => window.location.href = '/'}
             className="px-4 py-2 bg-primary text-white rounded-md hover:bg-teal-600"
           >
@@ -37,7 +36,7 @@ const ProtectedRoute = ({ children }) => {
       </div>
     );
   }
-  
+
   // If authenticated, render the children
   return children;
 };

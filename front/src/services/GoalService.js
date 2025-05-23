@@ -189,7 +189,7 @@ class GoalService {
 
       // For each relevant goal, add the focus duration to progress
       for (const goal of timeGoals) {
-        if (goal.progressValue >= goal.targetValue) {
+        if (goal.progressValue >= goal.targetValue || (goal.progressValue + durationInSeconds) >= goal.targetValue) {
           goal.progressValue = goal.targetValue;
           await this.updateGoalProgress(
             goal._id,

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FaPlus, FaTrash, FaEdit, FaCalendarAlt, FaTimes } from 'react-icons/fa';
 // import './css/dailyplanner.css';
 import taskService from '../services/TaskService';
-import { showSuccessToast, showErrorToast, showInfoToast } from '../utils/toastStyles';
 
 const TaskModal = ({ isOpen, onClose, onSubmit, task = null }) => {
   const [taskData, setTaskData] = useState({
@@ -521,12 +520,6 @@ const DailyPlanner = () => {
     setCurrentTask(task);
     setIsModalOpen(true);
   };
-
-  const handleAddNewTask = () => {
-    setCurrentTask(null);
-    setIsModalOpen(true);
-  };
-
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setCurrentTask(null);

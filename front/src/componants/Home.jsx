@@ -49,9 +49,9 @@ const StickyNote = ({ note, onUpdate, onDelete, onColorChange, isAuthenticated, 
 
   return (
     <div
-      className={`w-full ${isExpanded ? 'h-48 sm:h-56' : 'h-32 sm:h-40'} 
-        ${currentBg} text-white rounded-lg shadow-lg 
-        overflow-hidden flex flex-col relative border-2 
+      className={`w-full ${isExpanded ? 'h-48 sm:h-56' : 'h-32 sm:h-40'}
+        ${currentBg} text-white rounded-lg shadow-lg
+        overflow-hidden flex flex-col relative border-2
         ${currentBorder} transition-all duration-200 hover:-translate-y-1 hover:shadow-xl`}
     >
       <textarea
@@ -111,7 +111,6 @@ export default function Home() {
   });
   const [workDuration, setWorkDuration] = useState(timerService.workDurationSetting || 0); // Default work duration (in minutes)
   const [breakDuration, setBreakDuration] = useState(timerService.breakDurationSetting || 0); // Default break duration (in minutes)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Dialog box visibility
   const [logs, setLogs] = useState(() => {
     const log = localStorage.getItem('activityLogs_' + timerService.userId);
     return log ? JSON.parse(log) : [];
@@ -122,10 +121,7 @@ export default function Home() {
   const [notifiedForBreak, setNotifiedForBreak] = useState(false); // Track if we've notified for current break session
   const [notificationPermission, setNotificationPermission] = useState(Notification.permission);
   const [showSettings, setShowSettings] = useState(false);
-  const [notes, setNotes] = useState(() => {
-    const savedNotes = localStorage.getItem('notes');
-    return savedNotes ? JSON.parse(savedNotes) : [];
-  });
+
   const [workdurationofuser, setWorkdurationofuser] = useState(() => {
     return timerService.workDuration || 0; // Use the property directly as fallback
   });
@@ -135,27 +131,19 @@ export default function Home() {
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
   const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Add state for save status
-  const [saveStatus, setSaveStatus] = useState({ saving: false, lastSaved: null });
-
-  // Add state for auto-save interval
+  // Add temporary state variables for settings form
+  const [tempWorkDuration, setTempWorkDuration] = useState(timerService.workDurationSetting || 25);
+  const [tempBreakDuration, setTempBreakDuration] = useState(timerService.breakDurationSetting || 5);
 
   const logsRef = useRef(null); // Ref to the logs container to scroll automatically
-
-  // useEffect(() => {
-  //   setLogs(timerService.allLogs);
-  //   console.log("Use effect called ")
-  // }, [timerService.workLogs, timerService.breakLogs, timerService.allLogs])
-
   // Subscribe to timer service updates with better error handling
   useEffect(() => {
-    logDebug("Home component mounted");
-
     // Check if user just logged in
     const justLoggedIn = localStorage.getItem('justLoggedIn');
     if (justLoggedIn === 'true') {
-      logDebug("User just logged in, clearing logs in Home component");
       setLogs([]);
       localStorage.removeItem('justLoggedIn');
     }
@@ -168,7 +156,6 @@ export default function Home() {
 
     // Get initial timer state
     const initialState = timerService.getState();
-    logDebug("Initial timer state in Home:", initialState);
     setTimerState(initialState);
 
     // Load logs from timer service
@@ -177,7 +164,6 @@ export default function Home() {
         const allLogs = timerService.getAllLogs();
 
         if (!Array.isArray(allLogs)) {
-          logDebug("getAllLogs returned non-array:", allLogs);
           return;
         }
 
@@ -196,7 +182,6 @@ export default function Home() {
           }
         });
 
-        logDebug(`Loaded ${todaysLogs.length} logs for today from timer service`);
 
         // Sort logs by start time (newest first)
         const sortedLogs = [...todaysLogs].sort((a, b) => {
@@ -218,7 +203,6 @@ export default function Home() {
 
     // Subscribe to timer service updates
     const unsubscribe = timerService.subscribe(newState => {
-      logDebug("Timer update received in Home:", newState);
       setTimerState(prevState => {
         // Only update if the new state is different
         if (JSON.stringify(prevState) !== JSON.stringify(newState)) {
@@ -237,7 +221,6 @@ export default function Home() {
 
     // Clean up on unmount
     return () => {
-      logDebug("Home component unmounting");
       unsubscribe();
     };
   }, []);
@@ -337,23 +320,6 @@ export default function Home() {
       return updatedNotes;
     });
   };
-
-  // Change sticky note color
-  const changeStickyNoteColor = (id, color) => {
-    if (!isAuthenticated) {
-      setShowAuthDialog(true);
-      return;
-    }
-    setStickyNotes((prevNotes) => {
-      const updatedNotes = prevNotes.map((note) =>
-        note.id === id ? { ...note, color } : note
-      );
-      saveStickyNotes(updatedNotes);
-      return updatedNotes;
-    });
-  };
-
-
   // Format time for display
   const formatTime = (seconds) => {
     // Check if seconds is a valid number
@@ -431,73 +397,6 @@ export default function Home() {
     }
   };
 
-  // Helper function to find any open log (session or break)
-  const findOpenLog = (logs) => {
-    if (!Array.isArray(logs)) return null;
-    // Look specifically for logs that have a start time but no end time
-    return logs.find(log => log && log.start && !log.end);
-  };
-
-  // Helper function to close an open log with proper duration calculation
-  const closeOpenLog = (logs) => {
-    if (!Array.isArray(logs)) return logs;
-
-    const updatedLogs = [...logs];
-    const openLogIndex = updatedLogs.findIndex(log => log && log.start && !log.end);
-
-    if (openLogIndex !== -1) {
-      const openLog = updatedLogs[openLogIndex];
-      const endTime = getFormattedCurrentTime();
-
-      try {
-        const startDate = new Date(openLog.start);
-        const endDate = new Date(endTime);
-
-        if (isNaN(startDate.getTime())) {
-          console.error("Invalid start date in log:", openLog);
-          // Fix the start date if it's invalid
-          openLog.start = endTime;
-        }
-
-        // Calculate duration in seconds
-        const durationSeconds = Math.max(0, Math.floor((endDate - startDate) / 1000));
-
-        // Update the log with end time and duration
-        updatedLogs[openLogIndex] = {
-          ...openLog,
-          end: endTime,
-          duration: calculateDuration(startDate, endDate),
-          durationSeconds: durationSeconds
-        };
-
-        console.log(`Closed ${openLog.type} log:`, {
-          start: formatDateForDisplay(openLog.start),
-          end: formatDateForDisplay(endTime),
-          duration: calculateDuration(startDate, endDate),
-          durationSeconds: durationSeconds
-        });
-        saveLogsToLocalStorage(updatedLogs);
-        setLogs(updatedLogs);
-        // Save updated logs to localStorage
-      } catch (error) {
-        console.error("Error closing log:", error);
-        // Still update the end time even if calculation fails
-        updatedLogs[openLogIndex] = {
-          ...openLog,
-          end: endTime,
-          duration: "Error",
-          durationSeconds: 0
-        };
-
-        // Save updated logs to localStorage even if there was an error
-        saveLogsToLocalStorage(updatedLogs);
-      }
-    } else {
-      console.log("No open log found to close");
-    }
-
-  };
-
   // Save logs to localStorage
   const saveLogsToLocalStorage = (logsToSave) => {
     try {
@@ -519,38 +418,6 @@ export default function Home() {
       console.error("Error saving logs to localStorage:", error);
     }
   };
-
-  // Load logs from localStorage
-  const loadLogsFromLocalStorage = () => {
-    try {
-      const userId = localStorage.getItem('userId');
-      if (!userId) {
-        console.log("No user ID, skipping logs load from localStorage");
-        return [];
-      }
-
-      // Try to load from user-specific key first
-      const userLogsKey = `activityLogs_${userId}`;
-      let savedLogs = localStorage.getItem(userLogsKey);
-
-      // If not found, try the generic key as fallback
-      if (!savedLogs) {
-        savedLogs = localStorage.getItem("activityLogs");
-      }
-
-      if (savedLogs) {
-        const parsedLogs = JSON.parse(savedLogs);
-        console.log(`Loaded ${parsedLogs.length} logs from localStorage for user ${userId}`);
-        return Array.isArray(parsedLogs) ? parsedLogs : [];
-      }
-
-      return [];
-    } catch (error) {
-      console.error("Error loading logs from localStorage:", error);
-      return [];
-    }
-  };
-
   // Helper function to get formatted current time
   const getFormattedCurrentTime = () => {
     return new Date().toISOString();
@@ -737,12 +604,6 @@ export default function Home() {
   };
 
   // Add state for error handling
-  const [error, setError] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Add temporary state variables for settings form
-  const [tempWorkDuration, setTempWorkDuration] = useState(timerService.workDurationSetting || 25);
-  const [tempBreakDuration, setTempBreakDuration] = useState(timerService.breakDurationSetting || 5);
 
   // Improved saveTimerSettings function with better error handling
   const saveTimerSettings = async (newWorkDuration, newBreakDuration) => {
@@ -863,10 +724,10 @@ export default function Home() {
 
 
       // Log when notification is shown
-      notification.onshow = () => console.log("Notification shown:", title);
+      // notification.onshow = () => console.log("Notification shown:", title);
 
       // Log any errors
-      notification.onerror = (err) => console.error("Notification error:", err);
+      // notification.onerror = (err) => console.error("Notification error:", err);
 
       // Handle notification click
       notification.onclick = () => {
@@ -903,7 +764,6 @@ export default function Home() {
           `You've been working for ${workDuration} minutes. Take a break.`
         );
         setNotifiedForWork(true); // Set flag to prevent repeated notifications
-        console.log(`Work notification sent after ${elapsedSeconds} seconds`);
       }
     }
 
@@ -920,7 +780,6 @@ export default function Home() {
           `Your ${breakDuration} minute break is done. Time to get back to work.`
         );
         setNotifiedForBreak(true); // Set flag to prevent repeated notifications
-        console.log(`Break notification sent after ${breakElapsed} seconds`);
       }
     }
   }, [timerState, workDuration, breakDuration, notificationPermission, notifiedForWork, notifiedForBreak]);
@@ -953,11 +812,6 @@ export default function Home() {
   const handlePause = () => {
     handlePauseTimer();
   };
-
-  // const handleBreak = () => {
-  //   startBreak();
-  // };
-
   const handleStopBreak = () => {
     handleEndBreak();
   };
@@ -1047,100 +901,6 @@ export default function Home() {
     setShowAuthDialog(true);
   };
 
-  // Fix the log display in Home component
-  const renderLogs = () => {
-    if (!Array.isArray(logs) || logs.length === 0) {
-      return <div className="text-gray-400">No activity logs yet.</div>;
-    }
-
-    return logs.map((log, index) => {
-      try {
-        // Format start time
-        let startFormatted = "---";
-        try {
-          if (log.start) {
-            const startDate = new Date(log.start);
-            if (!isNaN(startDate.getTime())) {
-              startFormatted = formatDateForDisplay(log.start);
-            }
-          }
-        } catch (e) {
-          console.error("Error formatting start time:", e);
-        }
-
-        // Format end time
-        let endFormatted = "---";
-        try {
-          if (log.end) {
-            const endDate = new Date(log.end);
-            if (!isNaN(endDate.getTime())) {
-              endFormatted = formatDateForDisplay(log.end);
-            }
-          }
-        } catch (e) {
-          console.error("Error formatting end time:", e);
-        }
-
-        // Format duration
-        let durationFormatted = "---";
-        try {
-          if (log.start && log.end) {
-            const startDate = new Date(log.start);
-            const endDate = new Date(log.end);
-            if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
-              durationFormatted = calculateDuration(startDate, endDate);
-            }
-          } else if (log.duration) {
-            durationFormatted = log.duration;
-          } else if (log.durationSeconds) {
-            durationFormatted = `${log.durationSeconds} seconds`;
-          }
-        } catch (e) {
-          console.error("Error formatting duration:", e);
-        }
-
-        const logTypeColor = log.type === 'session' ? 'text-teal-400' : 'text-blue-400';
-        const isOpen = log.start && !log.end;
-        const statusIndicator = isOpen ? '🟢 ' : '';
-
-        return (
-          <div key={index} className={`border-b border-gray-700 py-2 ${isOpen ? 'bg-gray-800' : ''}`}>
-            {statusIndicator}
-            <span className={logTypeColor}>
-              {log.type === 'session' ? 'Session' : 'Break'}
-            </span>
-            {' started at '}
-            {startFormatted}
-            {' ended at '}
-            {endFormatted}
-            {' - Duration: '}
-            {durationFormatted}
-          </div>
-        );
-      } catch (error) {
-        console.error("Error rendering log:", error, log);
-        return (
-          <div key={index} className="border-b border-gray-700 py-2 text-red-400">
-            Error displaying log entry
-          </div>
-        );
-      }
-    });
-  };
-
-  // Add these helper functions for time formatting
-  const formatTimeDisplay = (seconds) => {
-    if (seconds === undefined || seconds === null || isNaN(seconds)) {
-      return "00:00:00";
-    }
-
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
   const formatDurationHuman = (seconds) => {
     if (seconds < 60) return `${seconds}s`;
 
@@ -1227,7 +987,7 @@ export default function Home() {
                 className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all w-full
                   ${timerState.isRunning
                     ? 'bg-amber-500 hover:bg-amber-600'
-                    : 'bg-teal-500 hover:bg-teal-600'} 
+                    : 'bg-teal-500 hover:bg-teal-600'}
                   ${timerState.isOnBreak ? 'opacity-50 cursor-not-allowed' : 'opacity-100'}`}
                 onClick={timerState.isRunning ? handlePause : handleStart}
                 disabled={timerState.isOnBreak}
@@ -1295,7 +1055,6 @@ export default function Home() {
                   note={note}
                   onUpdate={updateStickyNote}
                   onDelete={deleteStickyNote}
-                  onColorChange={changeStickyNoteColor}
                   isAuthenticated={isAuthenticated}
                   onAuthRequired={() => setShowAuthDialog(true)}
                 />

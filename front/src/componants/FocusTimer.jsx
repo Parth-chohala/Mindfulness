@@ -79,6 +79,18 @@ export default function FocusTimer() {
   }, []);
 
   const formatTime = (seconds) => {
+    // Ensure seconds is a valid number
+    if (typeof seconds !== 'number' || isNaN(seconds)) {
+      seconds = 0;
+    }
+    
+    // Cap at reasonable maximum (24 hours)
+    const maxSeconds = 24 * 60 * 60;
+    if (seconds > maxSeconds) {
+      console.warn(`Timer value too large: ${seconds}s, capping at ${maxSeconds}s`);
+      seconds = maxSeconds;
+    }
+    
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
@@ -123,6 +135,13 @@ export default function FocusTimer() {
     setShowAuthDialog(true);
   };
 
+  // Add a reset handler
+  const handleReset = () => {
+    if (window.confirm("Are you sure you want to reset the timer? This will clear all current progress.")) {
+      timerService.resetTimerState();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#121212] text-white flex flex-col items-center justify-center p-4">
         <GoalTracker />
@@ -159,6 +178,14 @@ export default function FocusTimer() {
             onClick={handleSettings}
           >
             Settings
+          </button>
+          
+          <button
+            className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded text-sm transition-colors"
+            onClick={handleReset}
+            title="Reset timer"
+          >
+            Reset
           </button>
         </div>
         

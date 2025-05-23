@@ -1,21 +1,11 @@
 import goalService from "./GoalService";
 
-// Singleton instance
-let instance = null;
-
-// Global timer state that persists across component unmounts
 class TimerService {
   constructor() {
-    if (instance) {
-      return instance;
-    }
 
-    instance = this; // Set the instance before doing anything else
-
-    // Initialize core properties with safe defaults
     this.intervalId = null;
     this.autoSaveIntervalId = null;
-    this.autoSaveCheckId = null; // New property for checking auto-save status
+    this.autoSaveCheckId = null;
     this.isRunning = false;
     this.isOnBreak = false;
     this.seconds = 0;
@@ -28,27 +18,27 @@ class TimerService {
     this.timerId = null;
     this.sessionStart = null;
     this.breakStart = null;
-    this.workDurationSetting = 25; // Default to 25 minutes
-    this.breakDurationSetting = 5; // Default to 5 minutes
-    this.autoSaveInterval = 7000; // 7 seconds
+    this.workDurationSetting = 25;
+    this.breakDurationSetting = 5;
+    this.autoSaveInterval = 7000;
     this.hasChangedSinceLastSave = false;
     this.resourceErrorCount = 0;
     this.lastFetchTime = null;
     this.lastServerSave = null;
-    this.lastAutoSaveCheck = Date.now(); // Track when we last checked auto-save
+    this.lastAutoSaveCheck = Date.now();
     this.logs = [];
     this.lastActiveTime = Date.now();
     this.backgroundStartTime = null;
-    this.useRequestAnimationFrame = true; // Use RAF for more accurate timing when visible
+    this.wasRunningBeforeBackground = false; // Track if timer was running before background
+    this.wasOnBreakBeforeBackground = false; // Track if timer was on break before background
+    this.useRequestAnimationFrame = false; // Disable RAF for more reliable timing
     this.animationFrameId = null;
-    
+
     // Initialize with a delay to prevent race conditions
     setTimeout(() => this.initialize(), 100);
+
   }
-  // setInterval(() => {
-  //  //("Interval invoked ....")
-  // }, 6000);
-  // Start auto-save functionality
+
   startAutoSave() {
     // Clear any existing auto-save interval
     if (this.autoSaveIntervalId) {
@@ -56,15 +46,13 @@ class TimerService {
       this.autoSaveIntervalId = null;
     }
 
-    console.log("Auto save started with interval:", this.autoSaveInterval, "ms");
-    
     // Set up new auto-save interval
     this.autoSaveIntervalId = setInterval(() => {
-      console.log("Auto-save interval triggered");
+      // console.log("Auto-save interval triggered");
       if (this.userId) {
         // Always update when timer is active
         if (this.isRunning || this.isOnBreak || this.hasChangedSinceLastSave) {
-          console.log("Performing auto-save to DB");
+          // console.log("Performing auto-save to DB");
           this.updateInDB().catch((err) => {
             console.error("Error updating timer in DB:", err);
           });
@@ -72,7 +60,7 @@ class TimerService {
         }
       }
     }, this.autoSaveInterval);
-    
+
     // Add a periodic check to ensure auto-save is still running
     this.autoSaveCheckId = setInterval(() => {
       this.checkAutoSaveStatus();
@@ -81,37 +69,27 @@ class TimerService {
 
   // Stop auto-save functionality
   stopAutoSave() {
-    console.log("Stopping auto-save");
+    // console.log("Stopping auto-save");
     if (this.autoSaveIntervalId) {
       clearInterval(this.autoSaveIntervalId);
       this.autoSaveIntervalId = null;
     }
-
     if (this.autoSaveCheckId) {
       clearInterval(this.autoSaveCheckId);
       this.autoSaveCheckId = null;
     }
-
-
-    console.log("Auto-save stopped");
   }
 
   async fetchTimerData() {
     this.updateUserId();
     if (!this.userId) {
-      console.log("No user ID available, skipping fetchTimerData");
       return null;
     }
 
     const now = Date.now();
-    // Throttle fetches to prevent excessive API calls
     if (this.lastFetchTime && now - this.lastFetchTime < 5000) {
-      console.log("Throttling fetchTimerData - last fetch was too recent");
       return null;
     }
-
-    // console.log(`Fetching timer data for user ${this.userId}`);
-
     try {
       // Use AbortController to set a timeout
       const controller = new AbortController();
@@ -120,25 +98,19 @@ class TimerService {
         `http://localhost:5000/api/focusTimers/${this.userId}`,
         { signal: controller.signal }
       );
-
       // Clear the timeout
-
       if (!res.ok) {
         console.error("Server returned error:", res.status, res.statusText);
         return null;
       }
-
       // Use a separate request for break data to reduce payload size
       const breakController = new AbortController();
       const breakTimeoutId = setTimeout(() => breakController.abort(), 10000);
-
       const breakdata = await fetch(
         `http://localhost:5000/api/breaks/${this.userId}`,
         { signal: breakController.signal }
       );
-
       clearTimeout(breakTimeoutId);
-
       if (!breakdata.ok) {
         console.error(
           "Error fetching break data:",
@@ -150,19 +122,13 @@ class TimerService {
       // Parse responses
       const timer = await res.json();
       const breakinfo = await breakdata.json();
-
-      // console.log("Fetched timer data:", timer);
-      // console.log("Fetched break info:", breakinfo);
-
       // Store the timer ID for future updates
       this.timerId = timer._id;
-
       // Reset state before applying server data
       this.workLogs = [];
       this.breakLogs = [];
       this.workDuration = 0;
       this.breakDuration = 0;
-
       // Update local state with server data
       if (timer.worklogs && Array.isArray(timer.worklogs)) {
         this.workLogs = timer.worklogs.map((log) => ({
@@ -183,10 +149,8 @@ class TimerService {
           durationSeconds: log.durationSeconds || 0,
         }));
       }
-
       // Ensure we have valid durations
       const { manualWorkDuration, manualBreakDuration } = this.analyzeLogs();
-
       // Use server values if available, otherwise use calculated values
       this.workDuration = timer.workDuration || manualWorkDuration || 0;
       this.breakDuration = timer.breakDuration || manualBreakDuration || 0;
@@ -223,21 +187,14 @@ class TimerService {
         localStorage.setItem(userLogsKey, JSON.stringify(todaysLogs));
       }
 
-      // console.log(
-      //   `[TimerService] Saved ${todaysLogs.length} logs to localStorage`
-      // );
-
       // If timer was running, restart the interval
       if (this.isRunning) {
-        console.log("Timer was running in database, restarting timer...");
         // Stop any existing intervals first
         this.stopAllTimers();
 
         if (this.isOnBreak) {
-          console.log("Restarting break timer");
           this.startBreakInterval();
         } else {
-          console.log("Restarting work timer");
           this.startInterval();
         }
       }
@@ -329,11 +286,6 @@ class TimerService {
       throw new Error("User ID not available");
     }
 
-    //("Saving break settings:", {
-    //   userId: this.userId,
-    //   workDurationSetting: this.workDurationSetting,
-    //   breakDurationSetting: this.breakDurationSetting
-    // });
 
     try {
       // Use AbortController to set a timeout
@@ -392,6 +344,11 @@ class TimerService {
   }
   // Get current timer state - CRITICAL METHOD
   getState() {
+    // Ensure seconds is a valid number
+    if (typeof this.seconds !== "number" || isNaN(this.seconds)) {
+      this.seconds = 0;
+    }
+
     return {
       seconds: this.seconds,
       isRunning: this.isRunning,
@@ -454,7 +411,6 @@ class TimerService {
     };
 
     try {
-    
       const response = await fetch(
         `http://localhost:5000/api/focusTimers/${this.userId}`,
         {
@@ -462,10 +418,9 @@ class TimerService {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(timerData)
+          body: JSON.stringify(timerData),
         }
       );
-
 
       if (!response.ok) {
         console.error(
@@ -475,7 +430,7 @@ class TimerService {
         );
         return false;
       }
-      console.log("Timer data updated successfully");
+      // console.log("Timer data updated successfully");
       const data = await response.json();
       //(`[${updateTime}] Server response:`, data);
 
@@ -508,44 +463,113 @@ class TimerService {
     }
   }
 
+  // Fix the visibility change handler to preserve break state
+  handleVisibilityChange() {
+    console.log("Visibility changed:", document.visibilityState);
+
+    if (document.visibilityState === 'hidden') {
+      // Page is hidden (minimized or background tab)
+
+      // Store the exact time when going to background
+      this.backgroundStartTime = Date.now();
+
+      // Store current state before going to background
+      this.wasRunningBeforeBackground = this.isRunning;
+      this.wasOnBreakBeforeBackground = this.isOnBreak;
+
+      // Stop the timer interval completely
+      this.stopAllTimers();
+
+      // Save current state
+      if (this.isRunning) {
+        this.saveState();
+        this.updateInDB().catch(err => {
+          console.error('Error saving before background:', err);
+        });
+      }
+    } else {
+
+      // Only process if we were in background AND timer was running before background
+      if (this.backgroundStartTime && this.wasRunningBeforeBackground) {
+        const now = Date.now();
+        const backgroundTime = this.backgroundStartTime;
+
+        // Calculate exact elapsed time in seconds
+        const elapsedMs = now - backgroundTime;
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+
+
+        // Restore break state
+        this.isOnBreak = this.wasOnBreakBeforeBackground;
+
+        // Update the appropriate timer based on break state
+        if (!this.isOnBreak) {
+          this.seconds += elapsedSeconds;
+          this.workDuration += elapsedSeconds;
+          console.log(`Updated work duration: ${this.workDuration}s`);
+        } else {
+          this.breakDuration += elapsedSeconds;
+          console.log(`Updated break duration: ${this.breakDuration}s`);
+        }
+
+        // Mark as changed
+        this.hasChangedSinceLastSave = true;
+
+        // Update UI
+        this.notifyListeners();
+
+        // Save state
+        this.saveState();
+        this.updateInDB().catch(err => {
+          console.error('Error updating after background:', err);
+        });
+      }
+
+      // Reset background start time
+      this.backgroundStartTime = null;
+
+      // Restart the timer interval ONLY if it was running before going to background
+      if (this.wasRunningBeforeBackground) {
+        setTimeout(() => {
+          // Ensure break state is preserved
+          this.isOnBreak = this.wasOnBreakBeforeBackground;
+
+          if (this.isOnBreak) {
+            this.startBreakInterval();
+          } else {
+            this.startInterval();
+          }
+        }, 100);
+      }
+    }
+  }
+
   // Start interval for timer updates
   startInterval() {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-    
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-    
-    console.log("Starting new work interval");
+    this.stopAllTimers();
+
     this.isRunning = true;
     this.isOnBreak = false;
-    this.lastActiveTime = Date.now(); // Set the current time
-    this.backgroundStartTime = null; // Reset background time
-    
-    // Use both setInterval and requestAnimationFrame
-    if (this.useRequestAnimationFrame && document.visibilityState === 'visible') {
-      this.animationFrameId = requestAnimationFrame(() => this.updateTimerState());
-    }
-    
-    // Keep interval as a backup
+
     this.intervalId = setInterval(() => {
-      if (!this.isRunning) return;
-      const now = Date.now();
-      const elapsed = Math.floor((now - this.lastActiveTime) / 1000);
-      
-      if (elapsed > 0) {
-        this.seconds += elapsed;
-        this.workDuration += elapsed;
-        this.lastActiveTime = now;
-        this.hasChangedSinceLastSave = true;
-        this.notifyListeners();
+      if (!this.isRunning || this.isOnBreak) return;
+      if (document.visibilityState !== "visible") return;
+
+      this.seconds += 1;
+      this.workDuration += 1;
+
+      this.hasChangedSinceLastSave = true;
+      this.notifyListeners();
+
+      if (this.seconds % 5 === 0) {
+        console.log(`Timer: ${this.seconds}s, Work duration: ${this.workDuration}s`);
       }
     }, 1000);
+
+    console.log("Work interval started with ID:", this.intervalId);
   }
+
+
 
   // Helper function to get formatted date and time
   getFormattedDateTime() {
@@ -597,7 +621,6 @@ class TimerService {
     }
 
     // If we're already running a work session, end it first
-   
 
     // Now start a new work session
     this.isRunning = true;
@@ -609,11 +632,12 @@ class TimerService {
     // Start interval to update seconds
     this.startInterval();
 
-   const openlog = this.workLogs.filter(log => log.start && !log.end) || null;
-  //  console.log("Opened log :",openlog);
-   if(!openlog){
-    return;
-   }
+    const openlog =
+      this.workLogs.filter((log) => log.start && !log.end) || null;
+    //  console.log("Opened log :",openlog);
+    if (!openlog) {
+      return;
+    }
     // Add to work logs with explicit session type
     this.workLogs.push({
       type: "session",
@@ -640,7 +664,7 @@ class TimerService {
     // Save directly to server instead of localStorage
     try {
       await this.updateInDB();
-      console.log("Timer started and saved to database");
+      // console.log("Timer started and saved to database");
     } catch (err) {
       console.error("Error saving timer start to database:", err);
       // Still save to localStorage as fallback
@@ -861,7 +885,7 @@ class TimerService {
     // Update directly in DB instead of localStorage
     try {
       await this.updateInDB();
-      console.log("Break started and saved to database");
+      // console.log("Break started and saved to database");
     } catch (err) {
       console.error("Error saving break start to database:", err);
       // Still save to localStorage as fallback
@@ -871,36 +895,63 @@ class TimerService {
 
   // Start interval specifically for break tracking
   startBreakInterval() {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-    
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-    
-    console.log("Starting new break interval");
+    // console.log("Starting new break interval");
+
+    // First, stop ALL existing timers to prevent duplicates
+    this.stopAllTimers();
+
+    // Set timer state
     this.isRunning = true;
     this.isOnBreak = true;
-    this.lastActiveTime = Date.now();
-    
-    // Use both setInterval and requestAnimationFrame
-    if (this.useRequestAnimationFrame && document.visibilityState === 'visible') {
-      this.animationFrameId = requestAnimationFrame(this.updateTimerState);
-    }
-    
-    // Keep interval as a backup and for background updates
+    this.backgroundStartTime = null;
+
+    // Use a timestamp-based approach
+    let lastTick = Date.now();
+
+    // Create a new interval with safeguards
     this.intervalId = setInterval(() => {
-      if (!this.isRunning || !this.isOnBreak) return;
-      this.updateTimerState();
+      // Only proceed if the timer is running and on break
+      if (!this.isRunning || !this.isOnBreak) {
+        return;
+      }
+
+      // Only increment if page is visible
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      // Calculate time since last tick
+      const now = Date.now();
+      const elapsed = now - lastTick;
+
+      // Only increment if at least 950ms have passed
+      if (elapsed >= 950) {
+        // Increment by exactly 1 second
+        this.breakDuration += 1;
+
+        // Update last tick time
+        lastTick = now;
+
+        // Mark as changed and notify listeners
+        this.hasChangedSinceLastSave = true;
+        this.notifyListeners();
+
+        // Log every 5 seconds for debugging
+        if (this.breakDuration % 5 === 0) {
+          // console.log(`Break duration: ${this.breakDuration}s`);
+        }
+      }
     }, 1000);
+
+    // console.log("Break interval started with ID:", this.intervalId);
   }
 
-  // Stop break
+  // Fix the stopBreak method to add more checks
   async stopBreak() {
+
+    // Only proceed if we're actually on a break
     if (!this.isOnBreak) {
+      console.log("Not on break, ignoring stopBreak call");
       return;
     }
 
@@ -923,9 +974,6 @@ class TimerService {
         lastBreakLog.start,
         endTime
       );
-
-      // Ensure breakDuration is accurate
-      // this.breakDuration += breakDurationSeconds;
 
       // Also update the corresponding log in the combined logs array
       if (Array.isArray(this.logs)) {
@@ -985,7 +1033,6 @@ class TimerService {
     // Update directly in DB instead of localStorage
     try {
       await this.updateInDB();
-      console.log("Break stopped and work timer restarted - saved to database");
     } catch (err) {
       console.error("Error saving break stop to database:", err);
       // Still save to localStorage as fallback
@@ -993,43 +1040,7 @@ class TimerService {
     }
   }
 
-  // Get total work duration in seconds
-  getTotalWorkDuration() {
-    if (
-      this.seconds === undefined ||
-      this.seconds === null ||
-      isNaN(this.seconds)
-    ) {
-      return "0m";
-    }
 
-    const hours = Math.floor(this.seconds / 3600);
-    const minutes = Math.floor((this.seconds % 3600) / 60);
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
-  }
-
-  // Get total break duration in seconds
-  getTotalBreakDuration() {
-    if (
-      this.breakDuration === undefined ||
-      this.breakDuration === null ||
-      isNaN(this.breakDuration)
-    ) {
-      return "0m";
-    }
-
-    const hours = Math.floor(this.breakDuration / 3600);
-    const minutes = Math.floor((this.breakDuration % 3600) / 60);
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
-  }
 
   // Save state with user-specific keys
   saveState() {
@@ -1093,7 +1104,6 @@ class TimerService {
       console.error("Error saving timer state to localStorage:", error);
     }
   }
-
   // Load state with user-specific keys
   loadState() {
     try {
@@ -1101,11 +1111,9 @@ class TimerService {
         //("No user ID, skipping loadState");
         return;
       }
-
       // Try to load from user-specific key first
       const userKey = `timerState_${this.userId}`;
       let savedState = localStorage.getItem(userKey);
-
       // If not found, try the generic key as fallback
       if (!savedState) {
         savedState = localStorage.getItem("timerState");
@@ -1113,7 +1121,6 @@ class TimerService {
 
       if (savedState) {
         const state = JSON.parse(savedState);
-
         // Verify the state belongs to the current user
         if (state.userId && state.userId !== this.userId) {
           //(`State belongs to user ${state.userId}, not current user ${this.userId}. Ignoring.`);
@@ -1194,40 +1201,12 @@ class TimerService {
 
     //("Timer data cleared successfully");
   }
-
   // Debug function to check log integrity
-  checkLogIntegrity() {
-    //("Checking log integrity...");
 
-    // Analyze logs to get manual durations
-    const { manualWorkDuration, manualBreakDuration } = this.analyzeLogs();
-
-    // Update durations if needed
-    if (this.workDuration === 0 && manualWorkDuration > 0) {
-      //(`Fixing work duration: ${this.workDuration}s -> ${manualWorkDuration}s`);
-      this.workDuration = manualWorkDuration;
-      this.seconds = manualWorkDuration; // Update seconds too
-    }
-
-    if (this.breakDuration === 0 && manualBreakDuration > 0) {
-      //(`Fixing break duration: ${this.breakDuration}s -> ${manualBreakDuration}s`);
-      this.breakDuration = manualBreakDuration;
-    }
-
-    // Save fixed state
-    this.saveState();
-    this.notifyListeners();
-  }
 
   // Debug function to analyze logs and durations
   analyzeLogs() {
-    //("=== ANALYZING LOGS AND DURATIONS ===");
 
-    // Check if logs exist
-    //(`Work logs: ${this.workLogs.length}`);
-    //(`Break logs: ${this.breakLogs.length}`);
-
-    // Calculate durations manually
     let manualWorkDuration = 0;
     this.workLogs.forEach((log, index) => {
       if (log.start && log.end) {
@@ -1265,9 +1244,6 @@ class TimerService {
             const duration = Math.floor((end - start) / 1000);
             if (duration > 0) {
               manualBreakDuration += duration;
-              //(`Break log #${index}: ${duration}s`);
-
-              // Update the log with the calculated duration
               log.durationSeconds = duration;
               log.duration = this.calculateDuration(log.start, log.end);
             } else {
@@ -1281,14 +1257,6 @@ class TimerService {
         }
       }
     });
-
-    //(`Manual work duration: ${manualWorkDuration}s`);
-    //(`Manual break duration: ${manualBreakDuration}s`);
-    //(`Current work duration: ${this.workDuration}s`);
-    //(`Current break duration: ${this.breakDuration}s`);
-
-    //("=== END ANALYSIS ===");
-
     return {
       manualWorkDuration,
       manualBreakDuration,
@@ -1306,55 +1274,62 @@ class TimerService {
     }
   }
   initialize() {
+    console.log("Initializing timer service");
     // Clean up any existing timers first
     this.stopAllTimers();
     // Update user ID
     this.updateUserId();
-    
-    // Bind methods after they're defined
+
+    // Bind methods that need 'this' context
     this.handleVisibilityChange = this.handleVisibilityChange.bind(this);
-    this.updateTimerState = this.updateTimerState.bind(this);
-    
+    this.startInterval = this.startInterval.bind(this);
+    this.startBreakInterval = this.startBreakInterval.bind(this);
+    this.stopAllTimers = this.stopAllTimers.bind(this);
+    this.stopBreak = this.stopBreak.bind(this);
+
+    // Remove any existing visibility change listeners to prevent duplicates
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+
     // Add visibility change listener
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
-    
+
     // Fetch timer data from server or localStorage
     this.fetchTimerData()
       .then((result) => {
-        // console.log("Timer data fetched:", result);
-
-        if (result) {
-          // If timer was running according to the database, ensure it's running locally
-          if (result.isRunning) {
-            console.log(
-              "Timer was running in database, ensuring it's running locally"
-            );
-
-            // Make sure we stop any existing timers first
-            this.stopAllTimers();
-
-            // Set the running state
-            this.isRunning = true;
-
-            // Start the appropriate interval
-            if (result.isOnBreak) {
-              console.log("Starting break timer from database state");
-              this.isOnBreak = true;
-              this.startBreakInterval();
-            } else {
-              console.log("Starting work timer from database state");
-              this.isOnBreak = false;
-              this.startInterval();
-            }
-          }
-        } else {
-          // If server fetch failed, try to load from localStorage as fallback
-          console.log("Server fetch failed, trying localStorage as fallback");
-          this.loadState();
+        // Check for corrupted timer state
+        if (result && (
+            typeof this.seconds !== 'number' ||
+            isNaN(this.seconds) ||
+            this.seconds > 24 * 60 * 60 || // More than 24 hours
+            this.workDuration > 24 * 60 * 60
+          )) {
+          console.error("Corrupted timer state detected, resetting");
+          return this.resetTimerState();
         }
 
-        // Notify listeners of the updated state
-        this.notifyListeners();
+
+        // If timer should be running, start it
+        if (this.isRunning) {
+          console.log("Timer was running in database, restarting timer...");
+
+          // Ensure we don't have any running timers before starting new ones
+          this.stopAllTimers();
+
+          // Start the appropriate timer with a slight delay
+          setTimeout(() => {
+            if (this.isOnBreak) {
+              console.log("Restarting break timer");
+              this.startBreakInterval();
+            } else {
+              console.log("Restarting work timer");
+              this.startInterval();
+            }
+          }, 100);
+        } else {
+          console.log("Timer was not running in database, keeping it paused");
+        }
+
+        return result;
       })
       .catch((err) => {
         console.error("Error fetching timer data:", err);
@@ -1362,54 +1337,36 @@ class TimerService {
         this.loadState();
       });
 
-    // Start auto-save with longer interval since we're saving directly on state changes
-    this.startAutoSave();
-
-    // Add a page unload handler to save state before the page closes
-    window.addEventListener("beforeunload", () => {
-      if (this.isRunning) {
-        console.log("Page unloading, saving timer state");
-        // Use synchronous localStorage save since we can't wait for async operations
-        this.saveState();
-        this.updateInDB();
-      }
-    });
+    // Start auto-save with a slight delay to prevent race conditions
+    setTimeout(() => this.startAutoSave(), 500);
   }
   // Completely stop all timers and intervals
   stopAllTimers() {
-    // console.log("Stopping all timers and intervals");
+    // console.log("Stopping all timers");
 
     // Clear the main interval
     if (this.intervalId) {
-      console.log("Clearing main interval:", this.intervalId);
+      // console.log("Clearing interval ID:", this.intervalId);
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
-    
+
+    // Clear auto-save interval
+    if (this.autoSaveIntervalId) {
+      clearInterval(this.autoSaveIntervalId);
+      this.autoSaveIntervalId = null;
+    }
+
+    // Clear auto-save check
+    if (this.autoSaveCheckId) {
+      clearInterval(this.autoSaveCheckId);
+      this.autoSaveCheckId = null;
+    }
+
     // Clear animation frame
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
-    }
-    
-    // Clear auto-save interval
-    if (this.autoSaveIntervalId) {
-      console.log("Clearing auto-save interval:", this.autoSaveIntervalId);
-      clearInterval(this.autoSaveIntervalId);
-      this.autoSaveIntervalId = null;
-    }
-    
-    // Clear auto-save check interval
-    if (this.autoSaveCheckId) {
-      console.log("Clearing auto-save check interval:", this.autoSaveCheckId);
-      clearInterval(this.autoSaveCheckId);
-      this.autoSaveCheckId = null;
-    }
-    
-    // Reset running state if needed
-    if (this.isRunning) {
-      console.log("Resetting running state");
-      this.isRunning = false;
     }
   }
 
@@ -1418,9 +1375,7 @@ class TimerService {
     // Get today's date for filtering
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     this.updateUserId();
-
     // Get user-specific logs if available
     if (this.userId) {
       const userLogsKey = `timerLogs_${this.userId}`;
@@ -1504,11 +1459,6 @@ class TimerService {
               return false;
             }
           });
-
-          console.log(
-            `[TimerService] Retrieved ${todaysLogs.length} general logs for today`
-          );
-
           // Sort logs by start time (newest first)
           return todaysLogs.sort((a, b) => {
             try {
@@ -1524,181 +1474,23 @@ class TimerService {
       }
     }
 
-    console.log("[TimerService] No timer logs found");
+    // console.log("[TimerService] No timer logs found");
     return [];
   }
 
-  // Add or update this method to log a timer session
-  logSession(type, durationSeconds, start, end) {
-    this.updateUserId();
-
-    const log = {
-      id: Date.now().toString(),
-      type, // 'session' or 'break'
-      durationSeconds,
-      start: start || new Date().toISOString(),
-      end: end || new Date().toISOString(),
-    };
-
-    // Get existing logs
-    let logs = this.getAllLogs();
-
-    // Add new log
-    logs.push(log);
-
-    // Filter for today's logs only
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const todaysLogs = logs.filter((log) => {
-      if (!log || !log.start) return false;
-
-      try {
-        const logDate = new Date(log.start);
-        return !isNaN(logDate.getTime()) && logDate >= today;
-      } catch (e) {
-        return false;
-      }
-    });
-
-    // Store logs
-    if (this.userId) {
-      const userLogsKey = `timerLogs_${this.userId}`;
-      localStorage.setItem(userLogsKey, JSON.stringify(todaysLogs));
-      console.log(
-        `[TimerService] Saved timer log for user ${this.userId}:`,
-        log
-      );
-    } else {
-      localStorage.setItem("timerLogs", JSON.stringify(todaysLogs));
-      console.log("[TimerService] Saved timer log (no user):", log);
-    }
-
-    // Update logs array
-    this.logs = todaysLogs;
-
-    // Update work/break logs
-    if (type === "session") {
-      this.workLogs.push(log);
-    } else if (type === "break") {
-      this.breakLogs.push(log);
-    }
-
-    // Recalculate durations
-    this.recalculateDurations();
-
-    // Notify listeners to update DOM
-    this.notifyListeners();
-
-    return log;
-  }
-
-
   // Add a method to check if auto-save is still running
   checkAutoSaveStatus() {
-    console.log("Checking auto-save status");
+    // console.log("Checking auto-save status");
     if (this.isRunning && !this.autoSaveIntervalId) {
-      console.log("Timer running but auto-save stopped, restarting auto-save");
+      // console.log("Timer running but auto-save stopped, restarting auto-save");
       this.startAutoSave();
     }
   }
 
-  handleVisibilityChange() {
-    const now = Date.now();
-    
-    if (document.visibilityState === 'visible') {
-      console.log('Page became visible, syncing timer state');
-      
-      // Calculate time spent in background if we were running
-      if (this.isRunning && this.backgroundStartTime) {
-        const backgroundTime = now - this.backgroundStartTime;
-        console.log(`Time spent in background: ${backgroundTime}ms`);
-        
-        // Update timer based on background time
-        if (backgroundTime > 1000) { // Only update if more than 1 second passed
-          const elapsedSeconds = Math.floor(backgroundTime / 1000);
-          
-          if (!this.isOnBreak) {
-            this.seconds += elapsedSeconds;
-            this.workDuration += elapsedSeconds;
-          } else {
-            this.breakDuration += elapsedSeconds;
-          }
-          
-          this.hasChangedSinceLastSave = true;
-          this.notifyListeners();
-        }
-      }
-      
-      // Reset background time tracking
-      this.backgroundStartTime = null;
-      this.lastActiveTime = now;
-      
-      // Restart animation frame for smooth updates
-      if (this.useRequestAnimationFrame && this.isRunning) {
-        if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
-        this.animationFrameId = requestAnimationFrame(this.updateTimerState);
-      }
-      
-      // Sync with server
-      this.fetchTimerData().catch(err => {
-        console.error('Error fetching timer data:', err);
-      });
-    } else {
-      console.log('Page hidden, saving current state');
-      
-      // Cancel animation frame when hidden
-      if (this.animationFrameId) {
-        cancelAnimationFrame(this.animationFrameId);
-        this.animationFrameId = null;
-      }
-      
-      // Mark the time we went to background
-      this.backgroundStartTime = now;
-      
-      // Save current state to server
-      if (this.isRunning || this.isOnBreak) {
-        this.updateInDB().catch(err => {
-          console.error('Error saving state on visibility change:', err);
-        });
-      }
-    }
-  }
-  updateTimerState() {
-    if (!this.isRunning) return;
-    
-    const now = Date.now();
-    const elapsed = Math.floor((now - this.lastActiveTime) / 1000);
-    this.backgroundStartTime = now;
-    if (elapsed > 0) {
-      if (!this.isOnBreak) {
-        this.seconds += elapsed;
-        this.workDuration += elapsed;
-      } else {
-        this.breakDuration += elapsed;
-      }
-      
-      this.lastActiveTime = now;
-      this.hasChangedSinceLastSave = true;
-      this.notifyListeners();
-    }
-    
-    // Continue the animation frame loop when visible
-    if (this.useRequestAnimationFrame && document.visibilityState === 'visible') {
-      this.animationFrameId = requestAnimationFrame(this.updateTimerState);
-    }
-  }
+
 }
 
 // Create a single instance
 const timerServiceInstance = new TimerService();
-
 // Export the instance
 export default timerServiceInstance;
-
-
-
-
-
-
-

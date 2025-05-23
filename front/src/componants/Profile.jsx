@@ -91,7 +91,7 @@ const Profile = () => {
           phone: response.data.phone || '',
           address: response.data.address || '',
         });
-        
+
         // Set user achievements if available
         if (response.data.achievements && Array.isArray(response.data.achievements)) {
           setUserAchievements(response.data.achievements);
@@ -114,52 +114,47 @@ const Profile = () => {
         return;
       }
 
-      console.log("Fetching timer stats for user:", userId);
-      
+
       // Fetch ALL timer data from API using the new endpoint
       const response = await axios.get(`http://localhost:5000/api/focusTimers/all/${userId}`);
-      console.log("API response:", response.data);
-      
+
       if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
         console.warn("No timer data returned from API");
         return;
       }
-      
+
       // Process the array of timer data
       let totalWorkTime = 0;
       let totalBreakTime = 0;
       const workLogs = [];
       const breakLogs = [];
-      
+
       // Process each timer record
       response.data.forEach(timerRecord => {
         // Add to total durations
         if (timerRecord.workDuration) {
           totalWorkTime += timerRecord.workDuration;
         }
-        
+
         if (timerRecord.breakDuration) {
           totalBreakTime += timerRecord.breakDuration;
         }
-        
+
         // Collect work logs
         if (timerRecord.worklogs && Array.isArray(timerRecord.worklogs)) {
           workLogs.push(...timerRecord.worklogs);
         }
-        
+
         // Collect break logs
         if (timerRecord.breaklogs && Array.isArray(timerRecord.breaklogs)) {
           breakLogs.push(...timerRecord.breaklogs);
         }
       });
-      
-      console.log("Total work time:", totalWorkTime, "Total break time:", totalBreakTime);
-      console.log("Work logs:", workLogs.length, "Break logs:", breakLogs.length);
-      
+
       // Group sessions by day
       const sessionsPerDay = groupLogsByDay(workLogs);
       const breaksPerDay = groupLogsByDay(breakLogs);
-      
+
       setTimerStats({
         totalWorkTime,
         totalBreakTime,
@@ -182,23 +177,19 @@ const Profile = () => {
         return;
       }
 
-      console.log("Fetching goal stats for user:", userId);
-      
       // Import the goal service if not already imported
       const goalService = require('../services/GoalService').default;
-      
+
       // Get all goals for the user
       const goals = await goalService.getAllGoals();
-      console.log("Retrieved goals:", goals.length);
-      
+
       if (!goals || goals.length === 0) {
-        console.log("No goals found for user");
         return;
       }
-      
+
       const completed = goals.filter(goal => goal.status === 'completed').length;
       const pending = goals.filter(goal => goal.status !== 'completed').length;
-      
+
       // Group goals by category
       const byCategory = goals.reduce((acc, goal) => {
         const category = goal.goalType || 'other';
@@ -211,9 +202,7 @@ const Profile = () => {
         }
         return acc;
       }, {});
-      
-      console.log("Goal stats:", { total: goals.length, completed, pending, byCategory });
-      
+
       setGoalStats({
         total: goals.length,
         completed,
@@ -246,7 +235,7 @@ const Profile = () => {
   const groupLogsByDay = (logs) => {
     const grouped = logs.reduce((acc, log) => {
       if (!log.start) return acc;
-      
+
       const date = new Date(log.start).toLocaleDateString();
       if (!acc[date]) {
         acc[date] = { count: 0, duration: 0 };
@@ -255,7 +244,7 @@ const Profile = () => {
       acc[date].duration += (log.durationSeconds || 0);
       return acc;
     }, {});
-    
+
     // Convert to array format for charts
     const last7Days = getLast7Days();
     return last7Days.map(date => ({
@@ -289,19 +278,9 @@ const Profile = () => {
     return `${minutes}m`;
   };
 
-  // Add console logs to debug chart data
-  useEffect(() => {
-    console.log("Timer stats updated:", timerStats);
-    console.log("Sessions chart data:", sessionsChartData);
-    console.log("Breaks chart data:", breaksChartData);
-    console.log("Focus time chart data:", focusTimeChartData);
-  }, [timerStats]);
 
-  useEffect(() => {
-    console.log("Goal stats updated:", goalStats);
-    console.log("Goal status chart data:", goalStatusChartData);
-    console.log("Goal category chart data:", goalCategoryChartData);
-  }, [goalStats]);
+
+
 
   // Chart data for sessions per day
   const sessionsChartData = {
@@ -356,8 +335,8 @@ const Profile = () => {
 
   // Chart data for goals by category
   const goalCategoryChartData = {
-    labels: Object.keys(goalStats.byCategory).length > 0 
-      ? Object.keys(goalStats.byCategory) 
+    labels: Object.keys(goalStats.byCategory).length > 0
+      ? Object.keys(goalStats.byCategory)
       : ['No Categories'],
     datasets: [
       {
@@ -393,8 +372,7 @@ const Profile = () => {
       Tooltip,
       Legend
     );
-    
-    console.log("Chart.js components registered");
+
   }, []);
 
   // Define chart options with explicit dimensions and responsive settings
@@ -528,7 +506,7 @@ const Profile = () => {
 
     // Clear the ENTIRE localStorage
     localStorage.clear();
-    
+
     // Show success message
     showSuccessToast("Logged out successfully");
 
@@ -548,7 +526,7 @@ const Profile = () => {
 
         // Clear entire localStorage
         localStorage.clear();
-        
+
         setTimeout(() => {
           navigate('/');
           window.location.reload();
@@ -564,17 +542,17 @@ const Profile = () => {
   // Render the achievements tab
   const renderAchievementsTab = () => {
     const imgurl = 'http://localhost:5000/content/';
-    
+
     // Find full achievement objects for user's achievements
-    const earnedAchievements = achievements.filter(achievement => 
+    const earnedAchievements = achievements.filter(achievement =>
       userAchievements.includes(achievement._id)
     );
-    
+
     // Get achievements not yet earned
-    const unearnedAchievements = achievements.filter(achievement => 
+    const unearnedAchievements = achievements.filter(achievement =>
       !userAchievements.includes(achievement._id)
     );
-    
+
     return (
       <div className="space-y-4 max-w-3xl mx-auto px-4">
         {/* Earned Achievements */}
@@ -583,7 +561,7 @@ const Profile = () => {
             <Award className="mr-2 text-teal-500" size={18} />
             Your Achievements
           </h3>
-          
+
           {earnedAchievements.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {earnedAchievements.map(achievement => (
@@ -621,14 +599,14 @@ const Profile = () => {
             </div>
           )}
         </div>
-        
+
         {/* Available Achievements */}
         <div className="bg-[#1e1e1e] p-3 sm:p-4 rounded-lg shadow-md">
           <h3 className="text-lg font-semibold mb-3 text-white flex items-center">
             <Award className="mr-2 text-gray-500" size={18} />
             Available Achievements
           </h3>
-          
+
           {unearnedAchievements.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {unearnedAchievements.map(achievement => (
@@ -704,7 +682,7 @@ const Profile = () => {
         <div className="relative bg-gradient-to-r from-teal-900 to-teal-700 rounded-t-lg h-40 sm:h-56 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-teal-900/80 to-teal-700/80"></div>
           <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1519681393784-d120267933ba')] bg-cover bg-center opacity-20 mix-blend-overlay"></div>
-          
+
           <div className="absolute -bottom-16 left-6 sm:left-8">
             <div className="bg-[#1e1e1e] rounded-full p-1 w-32 h-32 flex items-center justify-center">
               <div className="bg-gradient-to-br from-teal-700 to-teal-900 rounded-full w-full h-full flex items-center justify-center">
@@ -920,7 +898,7 @@ const Profile = () => {
                             </p>
                           </div>
                         </div>
-                        
+
                         <div className="flex items-center gap-3 p-2 bg-[#1e1e1e] rounded">
                           <div className="bg-teal-900 p-2 rounded">
                             <Coffee size={16} className="text-teal-400" />
@@ -932,7 +910,7 @@ const Profile = () => {
                             </p>
                           </div>
                         </div>
-                        
+
                         <div className="flex items-center gap-3 p-2 bg-[#1e1e1e] rounded">
                           <div className="bg-teal-900 p-2 rounded">
                             <Target size={16} className="text-teal-400" />
@@ -969,9 +947,9 @@ const Profile = () => {
                         </div>
                         <div className="h-64 w-full">
                           {timerStats.sessionsPerDay && timerStats.sessionsPerDay.length > 0 ? (
-                            <Bar 
-                              data={sessionsChartData} 
-                              options={chartOptions} 
+                            <Bar
+                              data={sessionsChartData}
+                              options={chartOptions}
                               width={100}
                               height={50}
                             />
@@ -992,8 +970,8 @@ const Profile = () => {
                         </div>
                         <div className="h-64 w-full">
                           {timerStats.breaksPerDay && timerStats.breaksPerDay.length > 0 ? (
-                            <Bar 
-                              data={breaksChartData} 
+                            <Bar
+                              data={breaksChartData}
                               options={chartOptions}
                               width={100}
                               height={50}
@@ -1016,8 +994,8 @@ const Profile = () => {
                       </div>
                       <div className="h-64 w-full">
                         {timerStats.sessionsPerDay && timerStats.sessionsPerDay.length > 0 ? (
-                          <Bar 
-                            data={focusTimeChartData} 
+                          <Bar
+                            data={focusTimeChartData}
                             options={chartOptions}
                             width={100}
                             height={50}
@@ -1035,7 +1013,7 @@ const Profile = () => {
                         <h3 className="text-sm font-medium text-gray-300 mb-4">Focus vs Break Time</h3>
                         <div className="flex items-center justify-center h-48">
                           {timerStats.totalWorkTime > 0 || timerStats.totalBreakTime > 0 ? (
-                            <Pie 
+                            <Pie
                               data={{
                                 labels: ['Focus Time', 'Break Time'],
                                 datasets: [{
@@ -1058,7 +1036,7 @@ const Profile = () => {
                         <h3 className="text-sm font-medium text-gray-300 mb-4">Goals by Status</h3>
                         <div className="h-48 flex items-center justify-center">
                           {goalStats.total > 0 ? (
-                            <Pie 
+                            <Pie
                               data={goalStatusChartData}
                               options={pieOptions}
                               width={100}
@@ -1074,7 +1052,7 @@ const Profile = () => {
                     <div className="bg-[#2d3748] p-4 rounded-lg">
                       <h3 className="text-sm font-medium text-gray-300 mb-4">Goals by Category</h3>
                       <div className="h-64">
-                        <Bar 
+                        <Bar
                           data={goalCategoryChartData}
                           options={chartOptions}
                         />
